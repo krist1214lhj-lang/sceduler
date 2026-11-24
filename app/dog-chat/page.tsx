@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, useSyncExternalStore } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -23,6 +23,49 @@ const EMOTION_KR: Record<string, string> = {
 type Phase = "idle" | "detecting" | "streaming" | "chat" | "error"
 type Message = { role: "user" | "assistant"; content: string }
 
+type Recognition = {
+  lang: string
+  interimResults: boolean
+  onresult: ((e: { results: ArrayLike<ArrayLike<{ transcript: string }> & { isFinal: boolean }> }) => void) | null
+  onerror: ((e: { error: string }) => void) | null
+  onend: (() => void) | null
+  start: () => void
+  stop: () => void
+}
+
+function getRecognitionCtor(): (new () => Recognition) | null {
+  if (typeof window === "undefined") return null
+  const w = window as unknown as Record<string, unknown>
+  return (w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null) as (new () => Recognition) | null
+}
+
+const NAME_KEY = "dogName"
+let memoryName = ""
+const nameListeners = new Set<() => void>()
+
+function subscribeName(listener: () => void) {
+  nameListeners.add(listener)
+  return () => nameListeners.delete(listener)
+}
+
+function readName() {
+  try {
+    return localStorage.getItem(NAME_KEY) ?? memoryName
+  } catch {
+    return memoryName
+  }
+}
+
+function saveName(name: string) {
+  memoryName = name
+  try {
+    localStorage.setItem(NAME_KEY, name)
+  } catch {}
+  nameListeners.forEach((l) => l())
+}
+
+const noopSubscribe = () => () => {}
+
 export default function DogChatPage() {
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -37,6 +80,14 @@ export default function DogChatPage() {
   const [inputText, setInputText] = useState("")
   const [isSending, setIsSending] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const dogName = useSyncExternalStore(subscribeName, readName, () => "")
+  const voiceSupported = useSyncExternalStore(
+    noopSubscribe,
+    () => getRecognitionCtor() !== null,
+    () => false,
+  )
+  const [isListening, setIsListening] = useState(false)
+  const recognitionRef = useRef<Recognition | null>(null)
 
   useEffect(() => {
     let stream: MediaStream | null = null
@@ -151,7 +202,12 @@ export default function DogChatPage() {
       const res = await fetch("/api/dog-chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ emotion: emotionLabel, messages: history, isInitial }),
+        body: JSON.stringify({
+          emotion: emotionLabel,
+          messages: history,
+          isInitial,
+          dogName: dogName.trim(),
+        }),
       })
 
       if (!res.ok || !res.body) {
@@ -181,16 +237,49 @@ export default function DogChatPage() {
     }
   }
 
-  async function handleSend() {
-    if (!inputText.trim() || !emotion || isSending) return
-    const userMsg: Message = { role: "user", content: inputText.trim() }
+  async function handleSend(text = inputText) {
+    if (!text.trim() || !emotion || isSending) return
+    const userMsg: Message = { role: "user", content: text.trim() }
     const newMessages = [...messages, userMsg]
     setMessages(newMessages)
     setInputText("")
     await streamDogResponse(emotion.label, newMessages, false)
   }
 
+  function handleVoice() {
+    if (isListening) {
+      recognitionRef.current?.stop()
+      return
+    }
+    const Ctor = getRecognitionCtor()
+    if (!Ctor) return
+    const recognition = new Ctor()
+    recognition.lang = "ko-KR"
+    recognition.interimResults = true
+    let finalText = ""
+    recognition.onresult = (e) => {
+      const result = e.results[e.results.length - 1]
+      setInputText(result[0].transcript)
+      if (result.isFinal) finalText = result[0].transcript
+    }
+    recognition.onerror = (e) => {
+      if (e.error === "not-allowed" || e.error === "service-not-allowed") {
+        setErrorMsg("마이크 권한이 필요해요. 브라우저 설정에서 마이크를 허용해 주세요.")
+      }
+    }
+    recognition.onend = () => {
+      setIsListening(false)
+      recognitionRef.current = null
+      if (finalText.trim()) handleSend(finalText)
+    }
+    recognitionRef.current = recognition
+    setErrorMsg(null)
+    setIsListening(true)
+    recognition.start()
+  }
+
   function handleReset() {
+    recognitionRef.current?.stop()
     setCapturedDataUrl(null)
     setEmotion(null)
     setMessages([])
@@ -208,7 +297,7 @@ export default function DogChatPage() {
       {/* Header */}
       <header className="flex items-center gap-2 px-4 py-3 border-b bg-card">
         <span className="text-xl">🐶</span>
-        <h1 className="font-semibold text-base">강아지 감정 탐지기</h1>
+        <h1 className="font-semibold text-base">{dogName.trim() || "강아지 감정 탐지기"}</h1>
         {inChat && (
           <Button variant="ghost" size="sm" className="ml-auto text-sm" onClick={handleReset}>
             새로 시작
@@ -274,6 +363,19 @@ export default function DogChatPage() {
               <div className="rounded-xl bg-destructive/10 border border-destructive/20 p-3 text-sm text-destructive">
                 {errorMsg}
               </div>
+            )}
+
+            {phase === "idle" && (
+              <label className="flex items-center gap-2 text-sm">
+                <span className="shrink-0 text-muted-foreground">우리 강아지 이름</span>
+                <Input
+                  value={dogName}
+                  onChange={(e) => saveName(e.target.value)}
+                  placeholder="예: 뽀식이"
+                  maxLength={20}
+                  className="h-10 rounded-xl"
+                />
+              </label>
             )}
 
             <div className="flex gap-2 mt-auto">
@@ -374,7 +476,22 @@ export default function DogChatPage() {
           </div>
 
           {/* Chat input */}
-          <div className="flex gap-2 p-4 border-t bg-card">
+          {errorMsg && (
+            <p className="px-4 pt-3 text-sm text-destructive border-t bg-card">{errorMsg}</p>
+          )}
+          <div className={cn("flex gap-2 p-4 bg-card", !errorMsg && "border-t")}>
+            {voiceSupported && (
+              <Button
+                size="lg"
+                variant={isListening ? "destructive" : "outline"}
+                className={cn("h-12 w-12 p-0 text-xl shrink-0", isListening && "animate-pulse")}
+                onClick={handleVoice}
+                disabled={isSending}
+                title={isListening ? "듣는 중 (눌러서 멈추기)" : "음성으로 말하기"}
+              >
+                {isListening ? "⏹️" : "🎤"}
+              </Button>
+            )}
             <Input
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
@@ -384,15 +501,15 @@ export default function DogChatPage() {
                   handleSend()
                 }
               }}
-              placeholder="강아지에게 말 걸기..."
-              disabled={isSending}
+              placeholder={isListening ? "듣고 있어요... 말해보세요" : `${dogName.trim() || "강아지"}에게 말 걸기...`}
+              disabled={isSending || isListening}
               className="flex-1 h-12 rounded-xl"
             />
             <Button
               size="lg"
               className="h-12 px-5"
-              onClick={handleSend}
-              disabled={!inputText.trim() || isSending}
+              onClick={() => handleSend()}
+              disabled={!inputText.trim() || isSending || isListening}
             >
               전송
             </Button>
