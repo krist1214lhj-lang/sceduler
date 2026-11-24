@@ -81,14 +81,29 @@ export default function DogChatPage() {
   function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
-    const reader = new FileReader()
-    reader.onload = (ev) => {
-      const dataUrl = ev.target?.result as string
+    e.target.value = ""
+    // Phone photos exceed Vercel's 4.5MB request limit, so downscale to JPEG like the camera path.
+    const url = URL.createObjectURL(file)
+    const img = new Image()
+    img.onload = () => {
+      URL.revokeObjectURL(url)
+      const canvas = canvasRef.current
+      if (!canvas) return
+      const maxSize = 640
+      const scale = Math.min(1, maxSize / Math.max(img.width, img.height))
+      canvas.width = img.width * scale
+      canvas.height = img.height * scale
+      canvas.getContext("2d")!.drawImage(img, 0, 0, canvas.width, canvas.height)
+      const dataUrl = canvas.toDataURL("image/jpeg", 0.85)
       setCapturedDataUrl(dataUrl)
       runAnalysis(dataUrl)
     }
-    reader.readAsDataURL(file)
-    e.target.value = ""
+    img.onerror = () => {
+      URL.revokeObjectURL(url)
+      setErrorMsg("이미지를 열 수 없습니다. 다른 사진을 선택해 주세요.")
+      setPhase("error")
+    }
+    img.src = url
   }
 
   async function runAnalysis(dataUrl: string) {
@@ -194,7 +209,7 @@ export default function DogChatPage() {
       <header className="flex items-center gap-2 px-4 py-3 border-b bg-card">
         <span className="text-xl">🐶</span>
         <h1 className="font-semibold text-base">강아지 감정 탐지기</h1>
-        {(inChat || phase === "chat") && (
+        {inChat && (
           <Button variant="ghost" size="sm" className="ml-auto text-sm" onClick={handleReset}>
             새로 시작
           </Button>
