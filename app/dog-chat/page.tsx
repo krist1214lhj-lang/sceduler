@@ -72,7 +72,7 @@ function canSpeak() {
 
 const EMOJI = new RegExp("[\\p{Extended_Pictographic}\\u200d\\ufe0f]", "gu")
 
-function speakAsDog(text: string) {
+function speak(text: string, pitch: number, rate: number) {
   if (!canSpeak()) return
   const clean = text.replace(EMOJI, "").replace(/~/g, "").trim()
   if (!clean) return
@@ -82,10 +82,28 @@ function speakAsDog(text: string) {
   utterance.lang = "ko-KR"
   const voice = synth.getVoices().find((v) => v.lang.replace("_", "-").startsWith("ko"))
   if (voice) utterance.voice = voice
-  utterance.pitch = 1.5
-  utterance.rate = 1.05
+  utterance.pitch = pitch
+  utterance.rate = rate
   synth.speak(utterance)
 }
+
+function speakAsDog(text: string) {
+  speak(text, 1.5, 1.05)
+}
+
+// Dogs respond to familiar cue words in a bright, slow tone, so calls use a clearer voice.
+function callDog(text: string) {
+  speak(text, 1.3, 0.9)
+}
+
+const CALLS: { icon: string; label: string; line: (name: string) => string }[] = [
+  { icon: "🐾", label: "이리 와", line: (n) => `${n}! 이리 와!` },
+  { icon: "🦴", label: "간식", line: (n) => `${n}! 간식 먹자!` },
+  { icon: "🦮", label: "산책", line: (n) => `${n}! 산책 가자!` },
+  { icon: "🪑", label: "앉아", line: (n) => `${n}, 앉아!` },
+  { icon: "👍", label: "잘했어", line: (n) => `${n}, 잘했어! 착하다!` },
+  { icon: "🌙", label: "잘 자", line: (n) => `${n}, 잘 자` },
+]
 
 // iOS only lets speech start inside a tap, so prime it with a silent utterance on each tap.
 function unlockSpeech() {
@@ -337,6 +355,29 @@ export default function DogChatPage() {
     setPhase("idle")
   }
 
+  const callName = dogName.trim() || "멍멍이"
+  const callButtons = speechSupported && (
+    <div className="flex flex-col gap-1.5">
+      <span className="text-xs text-muted-foreground">
+        📣 {callName} 부르기 · 아는 말을 밝은 목소리로 들려줘요
+      </span>
+      <div className="flex gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none]">
+        {CALLS.map((c) => (
+          <Button
+            key={c.label}
+            variant="outline"
+            size="sm"
+            className="shrink-0 rounded-full h-9 px-3"
+            disabled={isListening}
+            onClick={() => callDog(c.line(callName))}
+          >
+            {c.icon} {c.label}
+          </Button>
+        ))}
+      </div>
+    </div>
+  )
+
   const isAnalyzing = phase === "detecting" || phase === "streaming"
   const inChat = phase === "chat" || (phase === "streaming" && messages.length > 0)
 
@@ -439,6 +480,8 @@ export default function DogChatPage() {
               </label>
             )}
 
+            {phase === "idle" && callButtons}
+
             <div className="flex gap-2 mt-auto">
               <Button
                 size="lg"
@@ -539,11 +582,13 @@ export default function DogChatPage() {
             <div ref={chatBottomRef} />
           </div>
 
+          {callButtons && <div className="px-4 pt-3 border-t bg-card">{callButtons}</div>}
+
           {/* Chat input */}
           {errorMsg && (
-            <p className="px-4 pt-3 text-sm text-destructive border-t bg-card">{errorMsg}</p>
+            <p className={cn("px-4 pt-3 text-sm text-destructive bg-card", !callButtons && "border-t")}>{errorMsg}</p>
           )}
-          <div className={cn("flex gap-2 p-4 bg-card", !errorMsg && "border-t")}>
+          <div className={cn("flex gap-2 p-4 bg-card", !errorMsg && !callButtons && "border-t")}>
             {voiceSupported && (
               <Button
                 size="lg"
