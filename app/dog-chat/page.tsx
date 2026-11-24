@@ -66,6 +66,36 @@ function saveName(name: string) {
 
 const noopSubscribe = () => () => {}
 
+function canSpeak() {
+  return typeof window !== "undefined" && "speechSynthesis" in window
+}
+
+const EMOJI = new RegExp("[\\p{Extended_Pictographic}\\u200d\\ufe0f]", "gu")
+
+function speakAsDog(text: string) {
+  if (!canSpeak()) return
+  const clean = text.replace(EMOJI, "").replace(/~/g, "").trim()
+  if (!clean) return
+  const synth = window.speechSynthesis
+  synth.cancel()
+  const utterance = new SpeechSynthesisUtterance(clean)
+  utterance.lang = "ko-KR"
+  const voice = synth.getVoices().find((v) => v.lang.replace("_", "-").startsWith("ko"))
+  if (voice) utterance.voice = voice
+  utterance.pitch = 1.5
+  utterance.rate = 1.05
+  synth.speak(utterance)
+}
+
+// iOS only lets speech start inside a tap, so prime it with a silent utterance on each tap.
+function unlockSpeech() {
+  if (canSpeak()) window.speechSynthesis.speak(new SpeechSynthesisUtterance(""))
+}
+
+function stopSpeech() {
+  if (canSpeak()) window.speechSynthesis.cancel()
+}
+
 export default function DogChatPage() {
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -88,6 +118,17 @@ export default function DogChatPage() {
   )
   const [isListening, setIsListening] = useState(false)
   const recognitionRef = useRef<Recognition | null>(null)
+  const speechSupported = useSyncExternalStore(noopSubscribe, canSpeak, () => false)
+  const [speakOn, setSpeakOn] = useState(true)
+  const speakOnRef = useRef(true)
+
+  function toggleSpeak() {
+    const next = !speakOnRef.current
+    speakOnRef.current = next
+    setSpeakOn(next)
+    if (next) unlockSpeech()
+    else stopSpeech()
+  }
 
   useEffect(() => {
     let stream: MediaStream | null = null
@@ -116,6 +157,7 @@ export default function DogChatPage() {
   }, [messages, streamingText])
 
   function handleCapture() {
+    unlockSpeech()
     const video = videoRef.current
     const canvas = canvasRef.current
     if (!video || !canvas) return
@@ -227,6 +269,7 @@ export default function DogChatPage() {
       }
 
       setMessages((prev) => [...prev, { role: "assistant", content: fullText }])
+      if (speakOnRef.current) speakAsDog(fullText)
       setStreamingText("")
       setPhase("chat")
     } catch {
@@ -239,6 +282,7 @@ export default function DogChatPage() {
 
   async function handleSend(text = inputText) {
     if (!text.trim() || !emotion || isSending) return
+    unlockSpeech()
     const userMsg: Message = { role: "user", content: text.trim() }
     const newMessages = [...messages, userMsg]
     setMessages(newMessages)
@@ -253,6 +297,9 @@ export default function DogChatPage() {
     }
     const Ctor = getRecognitionCtor()
     if (!Ctor) return
+    // Stop the dog talking so the mic doesn't transcribe its voice.
+    stopSpeech()
+    unlockSpeech()
     const recognition = new Ctor()
     recognition.lang = "ko-KR"
     recognition.interimResults = true
@@ -280,6 +327,7 @@ export default function DogChatPage() {
 
   function handleReset() {
     recognitionRef.current?.stop()
+    stopSpeech()
     setCapturedDataUrl(null)
     setEmotion(null)
     setMessages([])
@@ -298,11 +346,24 @@ export default function DogChatPage() {
       <header className="flex items-center gap-2 px-4 py-3 border-b bg-card">
         <span className="text-xl">🐶</span>
         <h1 className="font-semibold text-base">{dogName.trim() || "강아지 감정 탐지기"}</h1>
-        {inChat && (
-          <Button variant="ghost" size="sm" className="ml-auto text-sm" onClick={handleReset}>
-            새로 시작
-          </Button>
-        )}
+        <div className="ml-auto flex items-center gap-1">
+          {speechSupported && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-sm"
+              onClick={toggleSpeak}
+              title={speakOn ? "음성 끄기" : "음성 켜기"}
+            >
+              {speakOn ? "🔊 소리 켬" : "🔇 소리 끔"}
+            </Button>
+          )}
+          {inChat && (
+            <Button variant="ghost" size="sm" className="text-sm" onClick={handleReset}>
+              새로 시작
+            </Button>
+          )}
+        </div>
       </header>
 
       {!inChat ? (
@@ -396,7 +457,10 @@ export default function DogChatPage() {
                   variant="outline"
                   className="h-14 px-5 text-xl"
                   title="갤러리에서 사진 선택"
-                  onClick={() => fileInputRef.current?.click()}
+                  onClick={() => {
+                    unlockSpeech()
+                    fileInputRef.current?.click()
+                  }}
                 >
                   🖼️
                 </Button>
