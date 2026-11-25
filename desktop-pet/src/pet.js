@@ -5,6 +5,45 @@ const tiltEl = document.getElementById("tilt")
 const imgEl = document.getElementById("img")
 const bubbleEl = document.getElementById("bubble")
 const fxEl = document.getElementById("fx")
+const spriteEl = document.getElementById("sprite")
+
+// Frames of the real 뽀식이, made from the user's photo (assets/ppo/*.png). All share one scale.
+const SPRITES = {
+  front: ["front"],
+  walk: ["walk0", "walk1", "walk2", "walk3"],
+  run: ["run0", "run1", "run2", "run3"],
+  sit: ["sit"],
+  sleep: ["sleep"],
+  jump: ["jump"],
+  bow: ["bow"],
+  paw: ["paw"],
+  eat: ["eat"],
+}
+const POSE = { walk: "walk", run: "run", fetch: "run", spin: "run", sit: "sit", sleep: "sleep", jump: "jump", bow: "bow", paw: "paw", eat: "eat" }
+const FRAME_MS = { walk: 130, run: 85 }
+const BASE_W = 222 // natural width of a walking frame = the dog's box width
+const BASE_H = 244
+const spriteSize = {}
+for (const name of new Set(Object.values(SPRITES).flat())) {
+  const im = new Image()
+  im.onload = () => (spriteSize[name] = [im.naturalWidth, im.naturalHeight])
+  im.src = `assets/ppo/${name}.png`
+}
+
+function drawSprite(now) {
+  const pose = POSE[S.action] || "front"
+  const frames = SPRITES[pose]
+  const name = frames.length > 1 ? frames[Math.floor(now / FRAME_MS[pose]) % frames.length] : frames[0]
+  if (spriteEl.dataset.n !== name) {
+    spriteEl.dataset.n = name
+    spriteEl.src = `assets/ppo/${name}.png`
+  }
+  const size = spriteSize[name]
+  if (size) spriteEl.style.width = `${(size[0] * S.w) / BASE_W}px`
+  // The side-view frames face right; the front photo has the name tag text, so it never mirrors.
+  const flip = pose === "front" ? 1 : S.facing
+  spriteEl.style.transform = `translateX(-50%) scaleX(${flip})`
+}
 
 const SIZES = { small: 110, medium: 150, large: 200 }
 const GRAVITY = 2600
@@ -24,6 +63,8 @@ const LINES = {
   land: () => ["휴~ 무사 착지!", "다시 해줘!", "멍! 착지 성공!"],
   wake: () => ["으응… 깼다!", "더 자고 싶은데…", "주인님이다!"],
   come: () => ["왔어요! 불렀어요?", "주인님~ 나 왔어!", "부르셨나요? 멍!"],
+  bow: () => ["놀자 놀자!", "기지개~ 쭈욱!", "같이 놀아요!"],
+  paw: () => ["손! 여기요~", "악수해요!"],
 }
 
 const RANDOM_ACTIONS = [
@@ -34,6 +75,7 @@ const RANDOM_ACTIONS = [
   ["jump", 8],
   ["run", 8],
   ["spin", 6],
+  ["bow", 5],
   ["sleep", 3],
 ]
 
@@ -47,6 +89,8 @@ const DURATIONS = {
   happy: [1600, 1600],
   eat: [2600, 2600],
   land: [450, 450],
+  bow: [1800, 2600],
+  paw: [2200, 2800],
 }
 
 const pick = (list) => list[Math.floor(Math.random() * list.length)]
@@ -87,6 +131,9 @@ const S = {
   mouseY: -1,
   lastStretch: performance.now(),
   greeted: false,
+  sprite: true,
+  ownerName: "",
+  lastFed: Date.now(),
 }
 
 window.__petState = () => ({
@@ -175,7 +222,10 @@ function pickNext() {
   const special = a === "idle" || a === "sit" ? timeLine() : null
   const line = special || (a === "sleep" || Math.random() < 0.15 ? lineFor(a) : undefined)
   if (a === "walk" || a === "run") doAction(a, { targetX: randomWalkX(), line })
-  else doAction(a, { line })
+  else {
+    if (Math.random() < 0.3) S.facing = -S.facing // look the other way now and then
+    doAction(a, { line })
+  }
 }
 
 function arrive() {
@@ -191,7 +241,10 @@ function arrive() {
       return
     }
     removeItem()
-    if (item.kind === "bone") doAction("eat", { line: "냠냠! 맛있다!" })
+    if (item.kind === "bone") {
+      S.lastFed = Date.now()
+      doAction("eat", { line: "냠냠! 맛있다!" })
+    }
     else doAction("happy", { line: "잡았다! 또 던져줘!" })
     return
   }
@@ -300,6 +353,10 @@ window.addEventListener("mousemove", (e) => {
   S.hovering = over
 })
 
+window.addEventListener("contextmenu", (e) => {
+  if (isOverPet(e.clientX, e.clientY)) window.pet.command("chat")
+})
+
 window.addEventListener("mousedown", (e) => {
   if (e.button !== 0 || !isOverPet(e.clientX, e.clientY)) return
   const now = performance.now()
@@ -352,13 +409,50 @@ window.pet.onCommand(async ({ type }) => {
     removeItem()
     doAction("sleep", { line: lineFor("sleep"), duration: 30000 })
   } else if (type === "come") {
-    const c = await window.pet.getCursor()
-    const tx = clamp(c.x - S.w / 2, 0, Math.max(0, S.W - S.w))
-    if (S.action === "fall") return
-    removeItem()
-    doAction("run", { targetX: tx, line: lineFor("come") })
+    await comeToCursor(lineFor("come"))
   }
 })
+
+async function comeToCursor(line) {
+  const c = await window.pet.getCursor()
+  const tx = clamp(c.x - S.w / 2, 0, Math.max(0, S.W - S.w))
+  if (S.action === "fall" || S.drag) return
+  removeItem()
+  doAction("run", { targetX: tx, line })
+}
+
+// ---------- conversation ----------
+window.pet.onChat((text) => handleChat(text))
+window.dispatchChat = (text) => handleChat(text) // used by the smoke test
+async function handleChat(text) {
+  const ctx = { name: S.name, ownerName: S.ownerName, hungry: Date.now() - S.lastFed > 2 * 60 * 60 * 1000 }
+  const r = window.dogBrain.reply(text, ctx)
+  if (r.remember && r.remember.ownerName) {
+    S.ownerName = r.remember.ownerName
+    window.pet.updateSettings({ ownerName: S.ownerName })
+  }
+  window.pet.chatReply(r.text)
+  if (S.drag || S.action === "fall") return say(r.text)
+  if (r.hearts) burstHearts()
+  switch (r.action) {
+    case "treat":
+      dropItem("bone")
+      return say(r.text)
+    case "ball":
+      dropItem("ball")
+      return say(r.text)
+    case "come":
+      return comeToCursor(r.text)
+    case "walk":
+      return doAction("walk", { targetX: randomWalkX(), line: r.text })
+    case "sleep":
+      removeItem()
+      return doAction("sleep", { line: r.text, duration: 30000 })
+    default:
+      if (S.action === "sleep" && r.action !== "sleep") burstHearts()
+      return doAction(r.action || "wag", { line: r.text })
+  }
+}
 
 // ---------- settings ----------
 function hasTransparentCorners(img) {
@@ -381,18 +475,22 @@ function hasTransparentCorners(img) {
 
 function applySize() {
   const round = imgEl.classList.contains("round")
-  const ratio = round || !imgEl.naturalWidth ? 1 : imgEl.naturalHeight / imgEl.naturalWidth
+  const ratio = S.sprite ? BASE_H / BASE_W : round || !imgEl.naturalWidth ? 1 : imgEl.naturalHeight / imgEl.naturalWidth
   const oldBottom = S.y + S.h
   S.h = S.w * ratio
   petEl.style.setProperty("--w", `${S.w}px`)
+  petEl.style.setProperty("--h", `${S.h}px`)
   if (S.y >= 0) S.y = oldBottom - S.h
 }
 
 function applySettings(s) {
   S.name = s.name
   S.sound = s.sound
+  S.ownerName = s.ownerName || ""
+  S.sprite = !s.customPhoto
+  petEl.classList.toggle("sprite", S.sprite)
   if (!s.sound && "speechSynthesis" in window) window.speechSynthesis.cancel()
-  S.w = SIZES[s.size] || SIZES.medium
+  S.w = Math.round((SIZES[s.size] || SIZES.medium) * (S.sprite ? 1.2 : 1))
   if (s.photo && imgEl.dataset.src !== s.photo) {
     imgEl.dataset.src = s.photo
     imgEl.onload = () => {
@@ -481,7 +579,8 @@ function loop(now) {
     S.hovering = false
   }
   const moving = ["walk", "run", "fetch"].includes(S.action)
-  tiltEl.style.transform = moving ? `rotate(${S.facing * 6}deg)` : ""
+  tiltEl.style.transform = S.sprite ? "" : moving ? `rotate(${S.facing * 6}deg)` : ""
+  if (S.sprite) drawSprite(now)
   petEl.style.transform = `translate(${S.x}px, ${S.y}px)`
 
   // Keep the speech bubble on screen near the edges.

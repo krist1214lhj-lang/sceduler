@@ -16,11 +16,12 @@ if (!SMOKE_DIR && !app.requestSingleInstanceLock()) {
 app.setAppUserModelId("com.ppo.desktoppet")
 
 const ASSETS = path.join(__dirname, "assets")
-const DEFAULTS = { name: "", photo: null, size: "medium", sound: false, displayId: null, hidden: false, welcomed: false }
+const DEFAULTS = { name: "", ownerName: "", photo: null, size: "medium", sound: false, displayId: null, hidden: false, welcomed: false }
 
 let settings = { ...DEFAULTS }
 let petWin = null
 let settingsWin = null
+let chatWin = null
 let tray = null
 
 const settingsFile = () => path.join(app.getPath("userData"), "settings.json")
@@ -61,6 +62,7 @@ function publicSettings() {
   return {
     name: dogName(),
     rawName: settings.name,
+    ownerName: settings.ownerName,
     customPhoto: Boolean(settings.photo),
     photo: photoDataUrl(),
     size: settings.size,
@@ -72,7 +74,7 @@ function publicSettings() {
 
 function broadcast() {
   const data = publicSettings()
-  for (const w of [petWin, settingsWin]) if (w && !w.isDestroyed()) w.webContents.send("settings", data)
+  for (const w of [petWin, settingsWin, chatWin]) if (w && !w.isDestroyed()) w.webContents.send("settings", data)
   buildTrayMenu()
 }
 
@@ -182,6 +184,40 @@ function openSettings() {
   settingsWin.on("closed", () => (settingsWin = null))
 }
 
+// ---------- chat window ----------
+function openChat() {
+  if (petWin && !petWin.isDestroyed() && !petWin.isVisible()) {
+    petWin.showInactive()
+    update({ hidden: false })
+  }
+  if (chatWin && !chatWin.isDestroyed()) {
+    chatWin.show()
+    chatWin.focus()
+    return
+  }
+  const area = targetDisplay().workArea
+  const width = 340
+  const height = 440
+  chatWin = new BrowserWindow({
+    width,
+    height,
+    x: area.x + area.width - width - 24,
+    y: area.y + area.height - height - 24,
+    resizable: true,
+    minimizable: true,
+    maximizable: false,
+    alwaysOnTop: true,
+    title: `${dogName()}랑 대화하기`,
+    icon: path.join(ASSETS, "tray@2x.png"),
+    autoHideMenuBar: true,
+    backgroundColor: "#fff8ef",
+    webPreferences: { preload: path.join(__dirname, "preload.js") },
+  })
+  chatWin.setMenu(null)
+  chatWin.loadFile(path.join(__dirname, "chat.html"))
+  chatWin.on("closed", () => (chatWin = null))
+}
+
 async function choosePhoto() {
   const parent = settingsWin && !settingsWin.isDestroyed() ? settingsWin : undefined
   const result = await dialog.showOpenDialog(parent, {
@@ -223,6 +259,7 @@ function buildTrayMenu() {
     ["large", "크게"],
   ]
   const template = [
+    { label: `💬 ${name}랑 대화하기`, click: openChat },
     { label: `🐶 ${name} 부르기`, click: () => sendCommand("come") },
     { label: "🦴 간식 주기", click: () => sendCommand("treat") },
     { label: "🎾 공 던져 주기", click: () => sendCommand("ball") },
@@ -305,6 +342,7 @@ ipcMain.handle("update-settings", (_e, patch) => {
   if (typeof patch.name === "string") allowed.name = patch.name.slice(0, 20)
   if (["small", "medium", "large"].includes(patch.size)) allowed.size = patch.size
   if (typeof patch.sound === "boolean") allowed.sound = patch.sound
+  if (typeof patch.ownerName === "string") allowed.ownerName = patch.ownerName.slice(0, 10)
   update(allowed)
   if (typeof patch.autoStart === "boolean") setAutoStart(patch.autoStart)
   if (settingsWin && !settingsWin.isDestroyed()) settingsWin.setTitle(`${dogName()} 설정`)
@@ -312,27 +350,44 @@ ipcMain.handle("update-settings", (_e, patch) => {
 })
 ipcMain.handle("choose-photo", () => choosePhoto())
 ipcMain.handle("reset-photo", () => resetPhoto())
-ipcMain.on("pet-command", (_e, type) => sendCommand(type))
+ipcMain.on("pet-command", (_e, type) => (type === "chat" ? openChat() : sendCommand(type)))
+ipcMain.on("chat-send", (_e, text) => {
+  if (!petWin || petWin.isDestroyed()) return
+  if (!petWin.isVisible()) {
+    petWin.showInactive()
+    update({ hidden: false })
+  }
+  petWin.webContents.send("chat", String(text).slice(0, 200))
+})
+ipcMain.on("chat-reply", (_e, text) => {
+  if (chatWin && !chatWin.isDestroyed()) chatWin.webContents.send("chat-reply", text)
+})
 
 // ---------- smoke test (Linux CI / dev only) ----------
 async function runSmokeTest() {
   fs.mkdirSync(SMOKE_DIR, { recursive: true })
-  const shots = [
-    [2500, "1-start", null],
-    [3500, "2-treat", "treat"],
-    [6000, "3-eating", null],
-    [7000, "4-sleep", "sleep"],
-    [9500, "5-sleeping", null],
-    [10500, "6-come", "come"],
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms))
+  const js = (code) => petWin.webContents.executeJavaScript(code)
+  // [label, setup code (run in the pet window), ms to wait before the shot]
+  const steps = [
+    ["01-landed", "", 2500],
+    ["02-walk", "doAction('walk', { targetX: 100 }); S.facing = -1", 400],
+    ["03-run", "doAction('run', { targetX: 1100 })", 250],
+    ["04-sit", "doAction('sit', { duration: 99999 })", 700],
+    ["05-sleep", "doAction('sleep', { duration: 99999 })", 700],
+    ["06-bow", "doAction('bow', { duration: 99999 })", 700],
+    ["07-chat-paw", "window.dispatchChat('손')", 700],
+    ["08-chat-love", "window.dispatchChat('사랑해')", 500],
+    ["09-chat-name", "window.dispatchChat('내 이름은 민지야')", 500],
+    ["10-chat-treat", "window.dispatchChat('간식 줄까?')", 2500],
+    ["11-drag", "doAction('drag'); S.y = 200", 400],
   ]
-  const t0 = Date.now()
-  for (const [at, label, cmd] of shots) {
-    await new Promise((r) => setTimeout(r, Math.max(0, at - (Date.now() - t0))))
-    if (cmd) sendCommand(cmd)
-    await new Promise((r) => setTimeout(r, 600))
+  for (const [label, code, ms] of steps) {
+    if (code) await js(code)
+    await wait(ms)
     const img = await petWin.webContents.capturePage()
     fs.writeFileSync(path.join(SMOKE_DIR, `${label}.png`), img.toPNG())
-    const state = await petWin.webContents.executeJavaScript("window.__petState && window.__petState()")
+    const state = await js("window.__petState && window.__petState()")
     fs.appendFileSync(path.join(SMOKE_DIR, "log.txt"), `${label}: ${JSON.stringify(state)}\n`)
   }
   app.quit()

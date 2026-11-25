@@ -41,7 +41,10 @@ html, body {
   left: 50%;
   margin-bottom: 4px;
   transform: translateX(calc(-50% + var(--shift, 0px)));
-  white-space: nowrap;
+  width: max-content;
+  max-width: 260px;
+  text-align: center;
+  word-break: keep-all;
   padding: 6px 12px;
   border-radius: 16px;
   border: 1.5px solid #f2c992;
@@ -101,3 +104,28 @@ html, body {
 .dog-eat { animation: dog-eat .35s ease-in-out infinite }
 .dog-drag { animation: dog-dangle .5s ease-in-out infinite; transform-origin: 50% 0 }
 .dog-land { animation: dog-land .45s ease-out }
+
+/* ---------- real 뽀식이 sprites (frames made from the user's photo) ---------- */
+#pet.sprite #img { display: none; }
+#pet:not(.sprite) #sprite { display: none; }
+#pet.sprite #body { position: relative; height: var(--h, 160px); }
+#sprite {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  max-width: none;
+  pointer-events: none;
+  filter: drop-shadow(0 4px 5px rgba(0, 0, 0, .22));
+}
+@keyframes sprite-bob { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-4px) } }
+@keyframes sprite-breathe { 0%,100% { transform: scale(1, 1) } 50% { transform: scale(1.012, 1.03) } }
+@keyframes sprite-nod { 0%,100% { transform: translateY(0) } 50% { transform: translateY(3px) } }
+@keyframes sprite-paw { 0%,100% { transform: rotate(-2deg) } 50% { transform: rotate(3deg) } }
+#pet.sprite .dog-walk { animation: sprite-bob .26s ease-in-out infinite }
+#pet.sprite .dog-run, #pet.sprite .dog-fetch { animation: sprite-bob .17s ease-in-out infinite }
+#pet.sprite .dog-sit { animation: sprite-breathe 2.4s ease-in-out infinite }
+#pet.sprite .dog-sleep { animation: sprite-breathe 3s ease-in-out infinite }
+#pet.sprite .dog-eat { animation: sprite-nod .4s ease-in-out infinite }
+#pet.sprite .dog-bow { animation: sprite-bob .5s ease-in-out infinite }
+#pet.sprite .dog-paw { animation: sprite-paw .5s ease-in-out infinite }
+#pet.sprite.sleeping #zzz { right: 8%; top: 30%; }
