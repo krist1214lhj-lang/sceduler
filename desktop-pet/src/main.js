@@ -356,6 +356,18 @@ ipcMain.on("set-ignore", (e, ignore) => {
   const w = BrowserWindow.fromWebContents(e.sender)
   if (w && !w.isDestroyed()) w.setIgnoreMouseEvents(ignore, { forward: true })
 })
+// The dog is being carried past the edge of its monitor: if the cursor is now over another
+// monitor, move the dog's window there and tell the dog where the cursor is in the new window.
+ipcMain.handle("carry-to-cursor", () => {
+  if (!petWin || petWin.isDestroyed()) return null
+  const p = screen.getCursorScreenPoint()
+  const d = screen.getDisplayNearestPoint(p)
+  if (d.id === targetDisplay().id) return null
+  update({ displayId: d.id })
+  fitToDisplay()
+  petWin.setAlwaysOnTop(true, "screen-saver")
+  return { x: p.x - d.workArea.x, y: p.y - d.workArea.y }
+})
 ipcMain.handle("get-cursor", () => {
   const p = screen.getCursorScreenPoint()
   const b = petWin && !petWin.isDestroyed() ? petWin.getBounds() : { x: 0, y: 0 }
