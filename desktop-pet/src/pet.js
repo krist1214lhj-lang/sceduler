@@ -480,9 +480,39 @@ function setIgnore(ignore) {
   window.pet.setIgnore(ignore)
 }
 
+// While carrying the dog past the window's edge, check whether the cursor reached another monitor.
+let carrying = false
+async function carryAcross(d) {
+  if (carrying) return
+  carrying = true
+  try {
+    const at = await window.pet.carryToCursor()
+    if (at && S.drag === d) {
+      // The window now covers the other monitor; keep the dog under the cursor there.
+      S.W = window.innerWidth
+      S.H = window.innerHeight
+      d.lastX = at.x
+      d.lastY = at.y
+      S.x = at.x - d.offX
+      S.y = at.y - d.offY
+      say(pick(["여기는 어디지? 킁킁", "옆 모니터 도착!", "새 놀이터다!"]))
+    }
+  } finally {
+    carrying = false
+  }
+}
+
 window.addEventListener("mousemove", (e) => {
+  if (S.drag && e.buttons === 0) {
+    // The button was released where we could not hear it (e.g. on another monitor): drop the dog.
+    endDrag()
+    return
+  }
   if (S.drag) {
     const d = S.drag
+    if (d.moved && (e.clientX < 0 || e.clientY < 0 || e.clientX >= window.innerWidth || e.clientY >= window.innerHeight)) {
+      carryAcross(d)
+    }
     const now = performance.now()
     const dt = Math.max(1, now - d.lastT) / 1000
     d.vx = d.vx * 0.5 + ((e.clientX - d.lastX) / dt) * 0.5
@@ -567,7 +597,9 @@ window.addEventListener("mousedown", (e) => {
   }
 })
 
-window.addEventListener("mouseup", () => {
+window.addEventListener("mouseup", () => endDrag())
+
+function endDrag() {
   const d = S.drag
   if (!d) return
   S.drag = null
@@ -586,7 +618,7 @@ window.addEventListener("mouseup", () => {
   }
   burstHearts()
   doAction("happy", { line: lineFor("pet") })
-})
+}
 
 window.addEventListener("resize", () => {
   S.W = window.innerWidth

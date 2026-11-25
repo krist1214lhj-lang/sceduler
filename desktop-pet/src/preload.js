@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld("pet", {
   choosePhoto: () => ipcRenderer.invoke("choose-photo"),
   resetPhoto: () => ipcRenderer.invoke("reset-photo"),
   getCursor: () => ipcRenderer.invoke("get-cursor"),
+  carryToCursor: () => ipcRenderer.invoke("carry-to-cursor"),
   setIgnore: (ignore) => ipcRenderer.send("set-ignore", ignore),
   command: (type) => ipcRenderer.send("pet-command", type),
   onSettings: (fn) => ipcRenderer.on("settings", (_e, data) => fn(data)),
