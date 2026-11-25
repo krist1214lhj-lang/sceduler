@@ -1,0 +1,17 @@
+{
+  "name": "뽀식이와 대화",
+  "short_name": "뽀식이",
+  "description": "카메라로 강아지 표정을 읽고 강아지와 대화해요.",
+  "lang": "ko",
+  "start_url": "/dog-chat",
+  "scope": "/dog-chat",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#ffffff",
+  "theme_color": "#fcd34d",
+  "icons": [
+    { "src": "/dog-chat-icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/dog-chat-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/dog-chat-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

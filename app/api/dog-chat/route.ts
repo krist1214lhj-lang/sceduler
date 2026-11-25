@@ -4,10 +4,10 @@ const anthropic = new Anthropic()
 
 export async function POST(request: Request) {
   try {
-    const { emotion, messages, isInitial, dogName } = (await request.json()) as {
+    const { emotion, messages, event, dogName } = (await request.json()) as {
       emotion: string
       messages: { role: "user" | "assistant"; content: string }[]
-      isInitial?: boolean
+      event?: "greet" | "mood"
       dogName?: string
     }
 
@@ -18,9 +18,22 @@ export async function POST(request: Request) {
 
     const systemPrompt = `${identity} 지금 감정 상태는 "${emotion}"이야. 짧고 귀엽게 한국어로 말해. 강아지처럼 "왈왈!", "멍멍!", "꼬리 흔들기~" 같은 표현을 자연스럽게 섞어서 말해. 두 세 문장 이내로 짧게 답해.`
 
-    const apiMessages: Anthropic.MessageParam[] = isInitial
-      ? [{ role: "user", content: "강아지 입장에서 짧게 인사해줘" }]
-      : messages
+    const history: Anthropic.MessageParam[] = [...messages]
+    // The client trims long histories, which can leave an assistant turn first; the API needs a user turn first.
+    while (history[0]?.role === "assistant") history.shift()
+
+    const apiMessages: Anthropic.MessageParam[] =
+      event === "greet"
+        ? [...history, { role: "user", content: "(상황: 주인이 방금 앱을 켰어) 강아지 입장에서 짧게 인사해줘" }]
+        : event === "mood"
+          ? [
+              ...history,
+              {
+                role: "user",
+                content: `(상황: 방금 네 표정을 다시 보니 기분이 "${emotion}"(으)로 바뀌었어) 주인이 묻기 전에, 지금 이 기분 그대로 한두 문장으로 먼저 말해줘. 기분이 사라졌다고 말하지 마.`,
+              },
+            ]
+          : history
 
     const stream = await anthropic.messages.stream({
       model: "claude-haiku-4-5-20251001",
