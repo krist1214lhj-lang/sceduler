@@ -26,14 +26,17 @@ const EMOTION_KR: Record<string, string> = {
   Sleepy: "졸림",
 }
 
+const AUTO_READ_MS = 15_000
+const IDLE_STOP_MS = 30 * 60_000
+const HISTORY_LIMIT = 20
+
+type Mode = "idle" | "live" | "photo"
 type Emotion = { label: string; reason: string }
+type Message = { role: "user" | "assistant"; content: string }
 
 function emotionForChat(e: Emotion) {
   return `${EMOTION_KR[e.label] ?? e.label} (${e.reason})`
 }
-
-type Phase = "idle" | "detecting" | "streaming" | "chat" | "error"
-type Message = { role: "user" | "assistant"; content: string }
 
 type Recognition = {
   lang: string
@@ -42,7 +45,7 @@ type Recognition = {
   onerror: ((e: { error: string }) => void) | null
   onend: (() => void) | null
   start: () => void
-  stop: () => void
+  abort: () => void
 }
 
 function getRecognitionCtor(): (new () => Recognition) | null {
@@ -85,6 +88,7 @@ function canSpeak() {
 const EMOJI = new RegExp("[\\p{Extended_Pictographic}\\u200d\\ufe0f]", "gu")
 
 let speechErrorListener: ((code: string) => void) | null = null
+let speechStateListener: ((speaking: boolean) => void) | null = null
 // Safari can garbage-collect an utterance mid-speech, so keep the current one alive.
 let currentUtterance: SpeechSynthesisUtterance | null = null
 
@@ -98,11 +102,14 @@ function speak(text: string, pitch: number, rate: number) {
   utterance.lang = "ko-KR"
   utterance.pitch = pitch
   utterance.rate = rate
-  utterance.onerror = (e) => {
-    if (e.error !== "canceled" && e.error !== "interrupted") speechErrorListener?.(e.error)
-  }
+  utterance.onstart = () => speechStateListener?.(true)
   utterance.onend = () => {
     if (currentUtterance === utterance) currentUtterance = null
+    speechStateListener?.(false)
+  }
+  utterance.onerror = (e) => {
+    speechStateListener?.(false)
+    if (e.error !== "canceled" && e.error !== "interrupted") speechErrorListener?.(e.error)
   }
   currentUtterance = utterance
   // Safari drops a speak() issued right after cancel(), so only cancel when needed and wait a beat.
@@ -141,66 +148,101 @@ function stopSpeech() {
   if (canSpeak()) window.speechSynthesis.cancel()
 }
 
+function drawToJpeg(canvas: HTMLCanvasElement, source: CanvasImageSource, width: number, height: number) {
+  const scale = Math.min(1, 640 / Math.max(width, height))
+  canvas.width = width * scale
+  canvas.height = height * scale
+  canvas.getContext("2d")!.drawImage(source, 0, 0, canvas.width, canvas.height)
+  return canvas.toDataURL("image/jpeg", 0.85)
+}
+
 export default function DogChatPage() {
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const chatBottomRef = useRef<HTMLDivElement>(null)
 
-  const [phase, setPhase] = useState<Phase>("idle")
-  const [capturedDataUrl, setCapturedDataUrl] = useState<string | null>(null)
+  const [mode, setMode] = useState<Mode>("idle")
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null)
   const [emotion, setEmotion] = useState<Emotion | null>(null)
+  const [analyzing, setAnalyzing] = useState(false)
+  const [dogMissing, setDogMissing] = useState(false)
   const [messages, setMessages] = useState<Message[]>([])
   const [streamingText, setStreamingText] = useState("")
   const [inputText, setInputText] = useState("")
+  const [heard, setHeard] = useState("")
   const [isSending, setIsSending] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
-  const dogName = useSyncExternalStore(subscribeName, readName, () => "")
-  const voiceSupported = useSyncExternalStore(
-    noopSubscribe,
-    () => getRecognitionCtor() !== null,
-    () => false,
-  )
+  const [cameraError, setCameraError] = useState<string | null>(null)
+  const [micOn, setMicOn] = useState(false)
   const [isListening, setIsListening] = useState(false)
-  const recognitionRef = useRef<Recognition | null>(null)
-  const speechSupported = useSyncExternalStore(noopSubscribe, canSpeak, () => false)
   const [speakOn, setSpeakOn] = useState(true)
-  const speakOnRef = useRef(true)
   const [soundError, setSoundError] = useState<string | null>(null)
-  const isIOS = useSyncExternalStore(
+
+  const dogName = useSyncExternalStore(subscribeName, readName, () => "")
+  const voiceSupported = useSyncExternalStore(noopSubscribe, () => getRecognitionCtor() !== null, () => false)
+  const speechSupported = useSyncExternalStore(noopSubscribe, canSpeak, () => false)
+  const isIOS = useSyncExternalStore(noopSubscribe, () => /iPhone|iPad|iPod/.test(navigator.userAgent), () => false)
+  const isAndroid = useSyncExternalStore(noopSubscribe, () => /Android/.test(navigator.userAgent), () => false)
+  const isInstalled = useSyncExternalStore(
     noopSubscribe,
-    () => /iPhone|iPad|iPod/.test(navigator.userAgent),
-    () => false,
+    () =>
+      window.matchMedia("(display-mode: standalone)").matches ||
+      (navigator as Navigator & { standalone?: boolean }).standalone === true,
+    () => true,
   )
+
+  // Timers, recognition and speech callbacks outlive renders, so they read live values from refs.
+  const modeRef = useRef<Mode>("idle")
+  const emotionRef = useRef<Emotion | null>(null)
+  const messagesRef = useRef<Message[]>([])
+  const busyRef = useRef(false)
+  const analyzingRef = useRef(false)
+  const micOnRef = useRef(false)
+  const speakOnRef = useRef(true)
+  const speakingRef = useRef(false)
+  const heardRef = useRef("")
+  const recognitionRef = useRef<Recognition | null>(null)
+  const quickEndsRef = useRef(0)
+  const lastActivityRef = useRef(0)
+  const sessionRef = useRef(0)
+  const wakeLockRef = useRef<WakeLockSentinel | null>(null)
+  const actionsRef = useRef({ tick: () => {}, resumeListening: () => {}, pauseListening: () => {} })
+
+  function updateEmotion(e: Emotion | null) {
+    emotionRef.current = e
+    setEmotion(e)
+  }
+
+  function updateMessages(m: Message[]) {
+    messagesRef.current = m
+    setMessages(m)
+  }
+
+  function setBusy(b: boolean) {
+    busyRef.current = b
+    setIsSending(b)
+  }
+
+  function updateHeard(text: string) {
+    heardRef.current = text
+    setHeard(text)
+  }
 
   useEffect(() => {
-    speechErrorListener = (code) => setSoundError(code)
-    return () => {
-      speechErrorListener = null
-    }
-  }, [])
-
-  function toggleSpeak() {
-    const next = !speakOnRef.current
-    speakOnRef.current = next
-    setSpeakOn(next)
-    if (next) unlockSpeech()
-    else stopSpeech()
-  }
+    actionsRef.current = { tick, resumeListening: startListening, pauseListening }
+  })
 
   useEffect(() => {
     let stream: MediaStream | null = null
     const start = async () => {
       try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "environment" },
-          audio: false,
-        })
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false })
       } catch {
         try {
           stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false })
         } catch {
-          setErrorMsg("카메라에 접근할 수 없습니다. 브라우저 권한을 확인해 주세요.")
+          setCameraError("카메라에 접근할 수 없어요. 브라우저 권한을 확인하거나 🖼️로 사진을 골라 주세요.")
           return
         }
       }
@@ -211,22 +253,319 @@ export default function DogChatPage() {
   }, [])
 
   useEffect(() => {
+    speechErrorListener = (code) => setSoundError(code)
+    speechStateListener = (speaking) => {
+      speakingRef.current = speaking
+      // Pause the mic while the dog talks so it doesn't transcribe its own voice.
+      if (speaking) actionsRef.current.pauseListening()
+      else actionsRef.current.resumeListening()
+    }
+    const onVisible = () => {
+      if (document.visibilityState === "visible" && modeRef.current === "live") requestWakeLock()
+    }
+    document.addEventListener("visibilitychange", onVisible)
+    return () => {
+      speechErrorListener = null
+      speechStateListener = null
+      document.removeEventListener("visibilitychange", onVisible)
+      recognitionRef.current?.abort()
+      wakeLockRef.current?.release().catch(() => {})
+    }
+  }, [])
+
+  useEffect(() => {
+    if (mode !== "live") return
+    const id = setInterval(() => actionsRef.current.tick(), AUTO_READ_MS)
+    return () => clearInterval(id)
+  }, [mode])
+
+  useEffect(() => {
     chatBottomRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages, streamingText])
 
-  function handleCapture() {
-    unlockSpeech()
+  function requestWakeLock() {
+    if (!("wakeLock" in navigator)) return
+    navigator.wakeLock
+      .request("screen")
+      .then((lock) => {
+        wakeLockRef.current = lock
+      })
+      .catch(() => {})
+  }
+
+  function releaseWakeLock() {
+    wakeLockRef.current?.release().catch(() => {})
+    wakeLockRef.current = null
+  }
+
+  function captureFrame() {
     const video = videoRef.current
     const canvas = canvasRef.current
-    if (!video || !canvas) return
-    const maxSize = 640
-    const scale = Math.min(1, maxSize / Math.max(video.videoWidth, video.videoHeight))
-    canvas.width = video.videoWidth * scale
-    canvas.height = video.videoHeight * scale
-    canvas.getContext("2d")!.drawImage(video, 0, 0, canvas.width, canvas.height)
-    const dataUrl = canvas.toDataURL("image/jpeg", 0.85)
-    setCapturedDataUrl(dataUrl)
-    runAnalysis(dataUrl)
+    if (!video || !canvas || !video.videoWidth) return null
+    return drawToJpeg(canvas, video, video.videoWidth, video.videoHeight)
+  }
+
+  function startListening() {
+    if (!micOnRef.current || recognitionRef.current || speakingRef.current || busyRef.current) return
+    const Ctor = getRecognitionCtor()
+    if (!Ctor) return
+    const recognition = new Ctor()
+    recognition.lang = "ko-KR"
+    recognition.interimResults = true
+    let finalText = ""
+    let gotResult = false
+    const startedAt = Date.now()
+    recognition.onresult = (e) => {
+      const result = e.results[e.results.length - 1]
+      gotResult = true
+      quickEndsRef.current = 0
+      updateHeard(result[0].transcript)
+      if (result.isFinal) finalText = result[0].transcript
+    }
+    recognition.onerror = (e) => {
+      if (e.error === "not-allowed" || e.error === "service-not-allowed") {
+        turnMicOff("마이크를 쓸 수 없어요. 브라우저에서 마이크를 허용한 뒤 🎤를 눌러 주세요.")
+      }
+    }
+    recognition.onend = () => {
+      if (recognitionRef.current === recognition) recognitionRef.current = null
+      setIsListening(false)
+      updateHeard("")
+      if (finalText.trim()) {
+        handleSend(finalText)
+        return
+      }
+      if (!gotResult && Date.now() - startedAt < 1500) quickEndsRef.current += 1
+      if (quickEndsRef.current >= 5) {
+        turnMicOff("자동 듣기가 자꾸 끊겨서 멈췄어요. 🎤를 눌러 다시 켜 주세요.")
+        return
+      }
+      if (micOnRef.current) setTimeout(() => actionsRef.current.resumeListening(), 400)
+    }
+    recognitionRef.current = recognition
+    try {
+      recognition.start()
+      setIsListening(true)
+    } catch {
+      recognitionRef.current = null
+      turnMicOff("자동 듣기를 시작하지 못했어요. 🎤를 눌러 다시 켜 주세요.")
+    }
+  }
+
+  function pauseListening() {
+    const recognition = recognitionRef.current
+    if (!recognition) return
+    recognitionRef.current = null
+    recognition.abort()
+  }
+
+  function turnMicOff(message?: string) {
+    micOnRef.current = false
+    setMicOn(false)
+    pauseListening()
+    if (message) setErrorMsg(message)
+  }
+
+  function toggleMic() {
+    if (micOnRef.current) {
+      turnMicOff()
+      return
+    }
+    lastActivityRef.current = Date.now()
+    micOnRef.current = true
+    quickEndsRef.current = 0
+    setMicOn(true)
+    setErrorMsg(null)
+    stopSpeech()
+    speakingRef.current = false
+    unlockSpeech()
+    startListening()
+  }
+
+  function toggleSpeak() {
+    const next = !speakOnRef.current
+    speakOnRef.current = next
+    setSpeakOn(next)
+    if (next) unlockSpeech()
+    else stopSpeech()
+  }
+
+  function resetSession() {
+    sessionRef.current += 1
+    pauseListening()
+    stopSpeech()
+    speakingRef.current = false
+    analyzingRef.current = false
+    setAnalyzing(false)
+    setBusy(false)
+    updateEmotion(null)
+    updateMessages([])
+    updateHeard("")
+    setStreamingText("")
+    setInputText("")
+    setErrorMsg(null)
+    setDogMissing(false)
+    setPhotoUrl(null)
+  }
+
+  function stopAll(notice?: string) {
+    resetSession()
+    turnMicOff()
+    releaseWakeLock()
+    modeRef.current = "idle"
+    setMode("idle")
+    if (notice) setErrorMsg(notice)
+  }
+
+  async function analyze(dataUrl: string, quick: boolean): Promise<Emotion | "no-dog" | null> {
+    const session = sessionRef.current
+    analyzingRef.current = true
+    setAnalyzing(true)
+    try {
+      const res = await fetch("/api/dog-emotion", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image: dataUrl, quick }),
+      })
+      const data = await res.json()
+      if (session !== sessionRef.current) return null
+      if (res.status === 422) {
+        setDogMissing(true)
+        return "no-dog"
+      }
+      if (!res.ok || data.error) {
+        setErrorMsg(data.error ?? "감정 분석에 실패했습니다.")
+        return null
+      }
+      setDogMissing(false)
+      const next: Emotion = { label: data.label, reason: data.reason }
+      updateEmotion(next)
+      return next
+    } catch {
+      if (session === sessionRef.current) setErrorMsg("네트워크 오류가 발생했습니다.")
+      return null
+    } finally {
+      if (session === sessionRef.current) {
+        analyzingRef.current = false
+        setAnalyzing(false)
+      }
+    }
+  }
+
+  async function dogSpeak(history: Message[], event?: "greet" | "mood") {
+    const current = emotionRef.current
+    if (!current) return
+    const session = sessionRef.current
+    setBusy(true)
+    pauseListening()
+    setStreamingText("")
+    let fullText = ""
+    try {
+      const res = await fetch("/api/dog-chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          emotion: emotionForChat(current),
+          messages: history.slice(-HISTORY_LIMIT),
+          event,
+          dogName: readName().trim(),
+        }),
+      })
+      if (!res.ok || !res.body) {
+        if (session === sessionRef.current) setErrorMsg("대화 생성에 실패했습니다.")
+        return
+      }
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        if (session !== sessionRef.current) {
+          reader.cancel()
+          return
+        }
+        fullText += decoder.decode(value, { stream: true })
+        setStreamingText(fullText)
+      }
+      updateMessages([...history, { role: "assistant", content: fullText }])
+      if (speakOnRef.current && fullText.trim()) {
+        speakAsDog(fullText)
+        // If the phone never starts speaking (muted, blocked), don't leave the mic paused forever.
+        setTimeout(() => {
+          if (!speakingRef.current) actionsRef.current.resumeListening()
+        }, 1500)
+      }
+    } catch {
+      if (session === sessionRef.current) setErrorMsg("네트워크 오류가 발생했습니다.")
+    } finally {
+      if (session === sessionRef.current) {
+        setStreamingText("")
+        setBusy(false)
+        if (!speakOnRef.current) actionsRef.current.resumeListening()
+      }
+    }
+  }
+
+  async function handleSend(text: string) {
+    const trimmed = text.trim()
+    if (!trimmed || !emotionRef.current || busyRef.current) return
+    lastActivityRef.current = Date.now()
+    setInputText("")
+    setErrorMsg(null)
+    const next: Message[] = [...messagesRef.current, { role: "user", content: trimmed }]
+    updateMessages(next)
+    await dogSpeak(next)
+  }
+
+  async function tick() {
+    if (modeRef.current !== "live" || document.hidden || analyzingRef.current || busyRef.current) return
+    if (Date.now() - lastActivityRef.current > IDLE_STOP_MS) {
+      stopAll("30분 동안 대화가 없어서 자동으로 멈췄어요. 다시 시작하려면 ▶️를 눌러 주세요.")
+      return
+    }
+    const frame = captureFrame()
+    if (!frame) return
+    const previous = emotionRef.current?.label
+    const next = await analyze(frame, true)
+    if (!next || next === "no-dog" || modeRef.current !== "live") return
+    // Don't talk over the owner mid-sentence or over a reply in progress.
+    if (busyRef.current || heardRef.current) return
+    if (!previous) await dogSpeak(messagesRef.current, messagesRef.current.length ? "mood" : "greet")
+    else if (next.label !== previous) await dogSpeak(messagesRef.current, "mood")
+  }
+
+  async function startLive() {
+    const frame = captureFrame()
+    if (!frame) {
+      setErrorMsg("카메라가 아직 준비되지 않았어요. 잠시 후 다시 눌러 주세요.")
+      return
+    }
+    unlockSpeech()
+    resetSession()
+    modeRef.current = "live"
+    setMode("live")
+    lastActivityRef.current = Date.now()
+    requestWakeLock()
+    if (voiceSupported) {
+      micOnRef.current = true
+      quickEndsRef.current = 0
+      setMicOn(true)
+      startListening()
+    }
+    const first = await analyze(frame, false)
+    if (first && first !== "no-dog" && modeRef.current === "live") await dogSpeak([], "greet")
+  }
+
+  async function lookCloser() {
+    const frame = captureFrame()
+    if (!frame || analyzingRef.current) return
+    lastActivityRef.current = Date.now()
+    unlockSpeech()
+    const previous = emotionRef.current?.label
+    const next = await analyze(frame, false)
+    if (!next || next === "no-dog" || busyRef.current) return
+    if (!previous) await dogSpeak(messagesRef.current, messagesRef.current.length ? "mood" : "greet")
+    else if (next.label !== previous) await dogSpeak(messagesRef.current, "mood")
   }
 
   function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
@@ -236,166 +575,30 @@ export default function DogChatPage() {
     // Phone photos exceed Vercel's 4.5MB request limit, so downscale to JPEG like the camera path.
     const url = URL.createObjectURL(file)
     const img = new Image()
-    img.onload = () => {
+    img.onload = async () => {
       URL.revokeObjectURL(url)
       const canvas = canvasRef.current
       if (!canvas) return
-      const maxSize = 640
-      const scale = Math.min(1, maxSize / Math.max(img.width, img.height))
-      canvas.width = img.width * scale
-      canvas.height = img.height * scale
-      canvas.getContext("2d")!.drawImage(img, 0, 0, canvas.width, canvas.height)
-      const dataUrl = canvas.toDataURL("image/jpeg", 0.85)
-      setCapturedDataUrl(dataUrl)
-      runAnalysis(dataUrl)
+      const dataUrl = drawToJpeg(canvas, img, img.width, img.height)
+      resetSession()
+      releaseWakeLock()
+      turnMicOff()
+      modeRef.current = "photo"
+      setMode("photo")
+      setPhotoUrl(dataUrl)
+      const result = await analyze(dataUrl, false)
+      if (result && result !== "no-dog") await dogSpeak([], "greet")
     }
     img.onerror = () => {
       URL.revokeObjectURL(url)
       setErrorMsg("이미지를 열 수 없습니다. 다른 사진을 선택해 주세요.")
-      setPhase("error")
     }
     img.src = url
   }
 
-  async function runAnalysis(dataUrl: string) {
-    setPhase("detecting")
-    setEmotion(null)
-    setMessages([])
-    setStreamingText("")
-    setErrorMsg(null)
-
-    try {
-      const emotionRes = await fetch("/api/dog-emotion", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ image: dataUrl }),
-      })
-      const emotionData = await emotionRes.json()
-
-      if (!emotionRes.ok || emotionData.error) {
-        setErrorMsg(emotionData.error ?? "감정 분석에 실패했습니다.")
-        setPhase("error")
-        return
-      }
-
-      const detectedEmotion: Emotion = { label: emotionData.label, reason: emotionData.reason }
-      setEmotion(detectedEmotion)
-
-      setPhase("streaming")
-      await streamDogResponse(emotionForChat(detectedEmotion), [], true)
-    } catch {
-      setErrorMsg("네트워크 오류가 발생했습니다.")
-      setPhase("error")
-    }
-  }
-
-  async function streamDogResponse(
-    emotionLabel: string,
-    history: Message[],
-    isInitial: boolean,
-  ) {
-    setIsSending(true)
-    setStreamingText("")
-    let fullText = ""
-
-    try {
-      const res = await fetch("/api/dog-chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          emotion: emotionLabel,
-          messages: history,
-          isInitial,
-          dogName: dogName.trim(),
-        }),
-      })
-
-      if (!res.ok || !res.body) {
-        setErrorMsg("대화 생성에 실패했습니다.")
-        setPhase("error")
-        return
-      }
-
-      const reader = res.body.getReader()
-      const decoder = new TextDecoder()
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        fullText += decoder.decode(value, { stream: true })
-        setStreamingText(fullText)
-      }
-
-      setMessages((prev) => [...prev, { role: "assistant", content: fullText }])
-      if (speakOnRef.current) speakAsDog(fullText)
-      setStreamingText("")
-      setPhase("chat")
-    } catch {
-      setErrorMsg("네트워크 오류가 발생했습니다.")
-      setPhase("error")
-    } finally {
-      setIsSending(false)
-    }
-  }
-
-  async function handleSend(text = inputText) {
-    if (!text.trim() || !emotion || isSending) return
-    unlockSpeech()
-    const userMsg: Message = { role: "user", content: text.trim() }
-    const newMessages = [...messages, userMsg]
-    setMessages(newMessages)
-    setInputText("")
-    await streamDogResponse(emotionForChat(emotion), newMessages, false)
-  }
-
-  function handleVoice() {
-    if (isListening) {
-      recognitionRef.current?.stop()
-      return
-    }
-    const Ctor = getRecognitionCtor()
-    if (!Ctor) return
-    // Stop the dog talking so the mic doesn't transcribe its voice.
-    stopSpeech()
-    unlockSpeech()
-    const recognition = new Ctor()
-    recognition.lang = "ko-KR"
-    recognition.interimResults = true
-    let finalText = ""
-    recognition.onresult = (e) => {
-      const result = e.results[e.results.length - 1]
-      setInputText(result[0].transcript)
-      if (result.isFinal) finalText = result[0].transcript
-    }
-    recognition.onerror = (e) => {
-      if (e.error === "not-allowed" || e.error === "service-not-allowed") {
-        setErrorMsg("마이크 권한이 필요해요. 브라우저 설정에서 마이크를 허용해 주세요.")
-      }
-    }
-    recognition.onend = () => {
-      setIsListening(false)
-      recognitionRef.current = null
-      if (finalText.trim()) handleSend(finalText)
-    }
-    recognitionRef.current = recognition
-    setErrorMsg(null)
-    setIsListening(true)
-    recognition.start()
-  }
-
-  function handleReset() {
-    recognitionRef.current?.stop()
-    stopSpeech()
-    setCapturedDataUrl(null)
-    setEmotion(null)
-    setMessages([])
-    setStreamingText("")
-    setInputText("")
-    setErrorMsg(null)
-    setPhase("idle")
-  }
-
+  const active = mode !== "idle"
   const callName = dogName.trim() || "멍멍이"
+
   const callButtons = speechSupported && (
     <div className="flex flex-col gap-1.5">
       <span className="text-xs text-muted-foreground">
@@ -408,9 +611,10 @@ export default function DogChatPage() {
             variant="outline"
             size="sm"
             className="shrink-0 rounded-full h-9 px-3"
-            disabled={isListening}
             onClick={() => {
               setSoundError(null)
+              lastActivityRef.current = Date.now()
+              pauseListening()
               callDog(c.line(callName))
             }}
           >
@@ -431,12 +635,14 @@ export default function DogChatPage() {
     </div>
   )
 
-  const isAnalyzing = phase === "detecting" || phase === "streaming"
-  const inChat = phase === "chat" || (phase === "streaming" && messages.length > 0)
+  const statusText = analyzing
+    ? "표정 읽는 중..."
+    : dogMissing
+      ? "화면에 강아지가 안 보여요"
+      : "15초마다 표정 읽는 중"
 
   return (
-    <main className="flex min-h-svh flex-col bg-background">
-      {/* Header */}
+    <main className="flex h-svh flex-col overflow-hidden bg-background">
       <header className="flex items-center gap-2 px-4 py-3 border-b bg-card">
         <span className="text-xl">🐶</span>
         <h1 className="font-semibold text-base">{dogName.trim() || "강아지 감정 탐지기"}</h1>
@@ -452,152 +658,144 @@ export default function DogChatPage() {
               {speakOn ? "🔊 소리 켬" : "🔇 소리 끔"}
             </Button>
           )}
-          {inChat && (
-            <Button variant="ghost" size="sm" className="text-sm" onClick={handleReset}>
-              새로 시작
+          {active && (
+            <Button variant="ghost" size="sm" className="text-sm" onClick={() => stopAll()}>
+              {mode === "live" ? "⏹️ 멈추기" : "처음으로"}
             </Button>
           )}
         </div>
       </header>
 
-      {!inChat ? (
-        <>
-          {/* Camera / Image area */}
-          <section className="relative flex-1 overflow-hidden bg-black min-h-0">
-            <video
-              ref={videoRef}
-              autoPlay
-              playsInline
-              muted
-              className={cn("w-full h-full object-cover", capturedDataUrl && "hidden")}
-            />
-            {capturedDataUrl && (
-              <img
-                src={capturedDataUrl}
-                alt="캡처된 강아지"
-                className="w-full h-full object-cover"
-              />
-            )}
-            {emotion && (
-              <div className="absolute top-3 inset-x-3 flex flex-col items-start gap-1.5">
-                <Badge className="text-sm px-3 py-1 gap-1.5 bg-white/90 text-foreground shadow-md">
-                  {EMOTION_EMOJI[emotion.label] ?? "🐾"}
-                  <span className="font-semibold">{EMOTION_KR[emotion.label] ?? emotion.label}</span>
-                </Badge>
-                <p className="rounded-xl bg-white/90 px-3 py-2 text-xs leading-relaxed text-foreground shadow-md">
-                  {emotion.reason}
-                </p>
-              </div>
-            )}
-            {!capturedDataUrl && errorMsg?.includes("카메라") && (
-              <div className="absolute inset-0 flex items-center justify-center text-white text-sm px-6 text-center">
-                {errorMsg}
-              </div>
-            )}
-          </section>
-
-          {/* Bottom panel */}
-          <section className="flex flex-col gap-3 p-4 border-t bg-card min-h-[180px]">
-            {isAnalyzing && (
-              <div className="flex flex-col gap-2">
-                <div className="h-4 w-1/3 rounded bg-muted animate-pulse" />
-                <div className="h-16 rounded-2xl bg-muted animate-pulse" />
-              </div>
-            )}
-
-            {phase === "streaming" && streamingText && (
-              <div className="relative rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 p-4">
-                <div className="absolute -top-2.5 left-6 w-0 h-0 border-l-[10px] border-r-[10px] border-b-[10px] border-l-transparent border-r-transparent border-b-amber-200 dark:border-b-amber-800" />
-                <div className="absolute -top-2 left-[26px] w-0 h-0 border-l-[9px] border-r-[9px] border-b-[9px] border-l-transparent border-r-transparent border-b-amber-50 dark:border-b-amber-950/30" />
-                <p className="text-sm leading-relaxed text-foreground whitespace-pre-wrap">
-                  {streamingText}
-                  <span className="animate-pulse">▍</span>
-                </p>
-              </div>
-            )}
-
-            {phase === "error" && errorMsg && !errorMsg.includes("카메라") && (
-              <div className="rounded-xl bg-destructive/10 border border-destructive/20 p-3 text-sm text-destructive">
-                {errorMsg}
-              </div>
-            )}
-
-            {phase === "idle" && (
-              <label className="flex items-center gap-2 text-sm">
-                <span className="shrink-0 text-muted-foreground">우리 강아지 이름</span>
-                <Input
-                  value={dogName}
-                  onChange={(e) => saveName(e.target.value)}
-                  placeholder="예: 뽀식이"
-                  maxLength={20}
-                  className="h-10 rounded-xl"
-                />
-              </label>
-            )}
-
-            {phase === "idle" && callButtons}
-
-            <div className="flex gap-2 mt-auto">
-              <Button
-                size="lg"
-                className="flex-1 h-14 text-base font-semibold"
-                disabled={isAnalyzing}
-                onClick={phase === "error" ? handleReset : handleCapture}
-              >
-                {phase === "idle" && "📸 사진 찍기"}
-                {phase === "detecting" && "🔍 감정 분석 중..."}
-                {phase === "streaming" && "💬 말 생성 중..."}
-                {phase === "error" && "🔄 다시 시도"}
-              </Button>
-              {(phase === "idle" || phase === "error") && (
-                <Button
-                  size="lg"
-                  variant="outline"
-                  className="h-14 px-5 text-xl"
-                  title="갤러리에서 사진 선택"
-                  onClick={() => {
-                    unlockSpeech()
-                    fileInputRef.current?.click()
-                  }}
-                >
-                  🖼️
-                </Button>
+      <section
+        className={cn("relative overflow-hidden bg-black", active ? "h-[36svh] shrink-0" : "flex-1 min-h-0")}
+      >
+        <video
+          ref={videoRef}
+          autoPlay
+          playsInline
+          muted
+          className={cn("w-full h-full object-cover", mode === "photo" && "hidden")}
+        />
+        {mode === "photo" && photoUrl && (
+          <img src={photoUrl} alt="선택한 강아지 사진" className="w-full h-full object-cover" />
+        )}
+        {cameraError && mode !== "photo" && (
+          <div className="absolute inset-0 flex items-center justify-center px-6 text-center text-sm text-white">
+            {cameraError}
+          </div>
+        )}
+        {emotion && (
+          <div className="absolute top-3 inset-x-3 flex flex-col items-start gap-1.5">
+            <Badge className="text-sm px-3 py-1 gap-1.5 bg-white/90 text-foreground shadow-md">
+              {EMOTION_EMOJI[emotion.label] ?? "🐾"}
+              <span className="font-semibold">{EMOTION_KR[emotion.label] ?? emotion.label}</span>
+            </Badge>
+            <p
+              className={cn(
+                "rounded-xl bg-white/90 px-3 py-2 text-xs leading-relaxed text-foreground shadow-md",
+                active && "line-clamp-3",
               )}
+            >
+              {emotion.reason}
+            </p>
+          </div>
+        )}
+        {mode === "live" && (
+          <>
+            <div className="absolute bottom-3 left-3 flex items-center gap-1.5 rounded-full bg-black/60 px-2.5 py-1 text-xs text-white">
+              <span className="h-2 w-2 rounded-full bg-red-500" />
+              {statusText}
             </div>
-          </section>
-        </>
+            <Button
+              size="sm"
+              variant="secondary"
+              className="absolute bottom-3 right-3 h-8 rounded-full"
+              disabled={analyzing}
+              onClick={lookCloser}
+            >
+              🔍 자세히 보기
+            </Button>
+          </>
+        )}
+        {mode === "photo" && (analyzing || dogMissing) && (
+          <div className="absolute bottom-3 left-3 rounded-full bg-black/60 px-2.5 py-1 text-xs text-white">
+            {analyzing ? "표정 읽는 중..." : "사진에서 강아지를 찾지 못했어요"}
+          </div>
+        )}
+      </section>
+
+      {!active ? (
+        <section className="flex flex-col gap-3 p-4 border-t bg-card">
+          <label className="flex items-center gap-2 text-sm">
+            <span className="shrink-0 text-muted-foreground">우리 강아지 이름</span>
+            <Input
+              value={dogName}
+              onChange={(e) => saveName(e.target.value)}
+              placeholder="예: 뽀식이"
+              maxLength={20}
+              className="h-10 rounded-xl"
+            />
+          </label>
+
+          {callButtons}
+
+          {errorMsg && (
+            <p className="rounded-xl bg-destructive/10 border border-destructive/20 p-3 text-sm text-destructive">
+              {errorMsg}
+            </p>
+          )}
+
+          <div className="flex gap-2">
+            <Button
+              size="lg"
+              className="flex-1 h-14 text-base font-semibold"
+              disabled={!!cameraError}
+              onClick={startLive}
+            >
+              ▶️ 대화 시작
+            </Button>
+            <Button
+              size="lg"
+              variant="outline"
+              className="h-14 px-5 text-xl"
+              title="갤러리에서 사진 선택"
+              onClick={() => {
+                unlockSpeech()
+                fileInputRef.current?.click()
+              }}
+            >
+              🖼️
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            시작하면 카메라와 마이크가 켜진 채로 15초마다 표정을 읽고, 말을 걸면 바로 대답해요.
+          </p>
+          {!isInstalled && (isIOS || isAndroid) && (
+            <p className="rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 p-3 text-xs leading-relaxed">
+              📲 <b>앱처럼 쓰기</b>:{" "}
+              {isIOS
+                ? "사파리 아래쪽 공유 버튼(네모에 위쪽 화살표)을 누르고 '홈 화면에 추가'를 누르세요."
+                : "크롬 오른쪽 위 메뉴(⋮)에서 '홈 화면에 추가'를 누르세요."}{" "}
+              홈 화면의 🐶 아이콘으로 바로 열 수 있어요.
+            </p>
+          )}
+        </section>
       ) : (
         <>
-          {/* Thumbnail + emotion badge */}
-          <div className="flex items-center gap-3 px-4 py-3 border-b bg-card/50">
-            {capturedDataUrl && (
-              <img
-                src={capturedDataUrl}
-                alt="강아지"
-                className="w-12 h-12 rounded-xl object-cover border"
-              />
-            )}
-            {emotion && (
-              <div className="flex flex-col items-start gap-1 min-w-0">
-                <Badge className="text-sm px-3 py-1 gap-1.5 bg-white/90 text-foreground shadow-sm border">
-                  {EMOTION_EMOJI[emotion.label] ?? "🐾"}
-                  <span className="font-semibold">{EMOTION_KR[emotion.label] ?? emotion.label}</span>
-                </Badge>
-                <p className="text-xs leading-snug text-muted-foreground">{emotion.reason}</p>
-              </div>
-            )}
-          </div>
-
-          {/* Chat messages */}
           <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
+            {messages.length === 0 && !streamingText && (
+              <p className="text-center text-sm text-muted-foreground">
+                {analyzing
+                  ? `${callName}의 표정을 읽고 있어요...`
+                  : dogMissing
+                    ? "강아지 얼굴이 잘 보이게 카메라를 비춰 주세요."
+                    : ""}
+              </p>
+            )}
+
             {messages.map((msg, i) => (
-              <div
-                key={i}
-                className={cn("flex", msg.role === "user" ? "justify-end" : "justify-start")}
-              >
-                {msg.role === "assistant" && (
-                  <span className="text-lg mr-2 self-end mb-0.5">🐶</span>
-                )}
+              <div key={i} className={cn("flex", msg.role === "user" ? "justify-end" : "justify-start")}>
+                {msg.role === "assistant" && <span className="text-lg mr-2 self-end mb-0.5">🐶</span>}
                 <div
                   className={cn(
                     "max-w-[80%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap",
@@ -611,7 +809,6 @@ export default function DogChatPage() {
               </div>
             ))}
 
-            {/* Streaming bubble */}
             {streamingText && (
               <div className="flex justify-start">
                 <span className="text-lg mr-2 self-end mb-0.5">🐶</span>
@@ -622,7 +819,6 @@ export default function DogChatPage() {
               </div>
             )}
 
-            {/* Typing indicator */}
             {isSending && !streamingText && (
               <div className="flex justify-start">
                 <span className="text-lg mr-2">🐶</span>
@@ -640,22 +836,21 @@ export default function DogChatPage() {
           </div>
 
           {callButtons && <div className="px-4 pt-3 border-t bg-card">{callButtons}</div>}
-
-          {/* Chat input */}
           {errorMsg && (
             <p className={cn("px-4 pt-3 text-sm text-destructive bg-card", !callButtons && "border-t")}>{errorMsg}</p>
           )}
-          <div className={cn("flex gap-2 p-4 bg-card", !errorMsg && !callButtons && "border-t")}>
+          {heard && <p className="px-4 pt-2 text-sm text-muted-foreground bg-card">🎙️ {heard}</p>}
+
+          <div className={cn("flex gap-2 p-4 bg-card", !callButtons && !errorMsg && "border-t")}>
             {voiceSupported && (
               <Button
                 size="lg"
-                variant={isListening ? "destructive" : "outline"}
-                className={cn("h-12 w-12 p-0 text-xl shrink-0", isListening && "animate-pulse")}
-                onClick={handleVoice}
-                disabled={isSending}
-                title={isListening ? "듣는 중 (눌러서 멈추기)" : "음성으로 말하기"}
+                variant={micOn ? "default" : "outline"}
+                className={cn("h-12 w-12 p-0 text-xl shrink-0", isListening && "ring-2 ring-red-400")}
+                onClick={toggleMic}
+                title={micOn ? "듣기 끄기" : "듣기 켜기"}
               >
-                {isListening ? "⏹️" : "🎤"}
+                {micOn ? "🎙️" : "🎤"}
               </Button>
             )}
             <Input
@@ -664,18 +859,18 @@ export default function DogChatPage() {
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault()
-                  handleSend()
+                  handleSend(inputText)
                 }
               }}
-              placeholder={isListening ? "듣고 있어요... 말해보세요" : `${dogName.trim() || "강아지"}에게 말 걸기...`}
-              disabled={isSending || isListening}
+              placeholder={micOn ? "그냥 말하면 돼요 (입력도 가능)" : `${callName}에게 말 걸기...`}
+              disabled={isSending}
               className="flex-1 h-12 rounded-xl"
             />
             <Button
               size="lg"
               className="h-12 px-5"
-              onClick={() => handleSend()}
-              disabled={!inputText.trim() || isSending || isListening}
+              onClick={() => handleSend(inputText)}
+              disabled={!inputText.trim() || isSending || !emotion}
             >
               전송
             </Button>
@@ -684,13 +879,7 @@ export default function DogChatPage() {
       )}
 
       <canvas ref={canvasRef} className="hidden" />
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/*"
-        className="hidden"
-        onChange={handleFileSelect}
-      />
+      <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileSelect} />
     </main>
   )
 }

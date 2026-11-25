@@ -39,7 +39,7 @@ Pick the single closest label even when signals are mixed. In "reason", write on
 
 export async function POST(request: Request) {
   try {
-    const { image } = (await request.json()) as { image: string }
+    const { image, quick } = (await request.json()) as { image: string; quick?: boolean }
 
     const match = image.match(/^data:(image\/(?:jpeg|png|gif|webp));base64,(.+)$/)
     if (!match) {
@@ -48,7 +48,8 @@ export async function POST(request: Request) {
     const mediaType = match[1] as "image/jpeg" | "image/png" | "image/gif" | "image/webp"
 
     const message = await anthropic.messages.create({
-      model: "claude-opus-5-5",
+      // Automatic readings every 15s use Haiku (~0.3원 each); a deliberate check uses Opus (~17원).
+      model: quick ? "claude-haiku-5-5" : "claude-opus-5-5",
       max_tokens: 4096,
       system: SYSTEM,
       output_config: { effort: "medium", format: { type: "json_schema", schema: SCHEMA } },
