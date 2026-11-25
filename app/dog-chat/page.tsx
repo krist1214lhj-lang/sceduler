@@ -8,16 +8,28 @@ import { cn } from "@/lib/utils"
 
 const EMOTION_EMOJI: Record<string, string> = {
   Happy: "😊",
+  Relaxed: "😌",
+  Curious: "🤔",
+  Anxious: "😰",
   Sad: "😢",
   Angry: "😠",
-  Relaxed: "😌",
+  Sleepy: "😴",
 }
 
 const EMOTION_KR: Record<string, string> = {
-  Happy: "행복",
-  Sad: "슬픔",
-  Angry: "화남",
+  Happy: "신남",
   Relaxed: "편안",
+  Curious: "궁금",
+  Anxious: "불안",
+  Sad: "시무룩",
+  Angry: "예민",
+  Sleepy: "졸림",
+}
+
+type Emotion = { label: string; reason: string }
+
+function emotionForChat(e: Emotion) {
+  return `${EMOTION_KR[e.label] ?? e.label} (${e.reason})`
 }
 
 type Phase = "idle" | "detecting" | "streaming" | "chat" | "error"
@@ -72,19 +84,34 @@ function canSpeak() {
 
 const EMOJI = new RegExp("[\\p{Extended_Pictographic}\\u200d\\ufe0f]", "gu")
 
+let speechErrorListener: ((code: string) => void) | null = null
+// Safari can garbage-collect an utterance mid-speech, so keep the current one alive.
+let currentUtterance: SpeechSynthesisUtterance | null = null
+
 function speak(text: string, pitch: number, rate: number) {
   if (!canSpeak()) return
   const clean = text.replace(EMOJI, "").replace(/~/g, "").trim()
   if (!clean) return
   const synth = window.speechSynthesis
-  synth.cancel()
   const utterance = new SpeechSynthesisUtterance(clean)
+  // No explicit voice: iOS can list voices that aren't installed, and picking one plays silence.
   utterance.lang = "ko-KR"
-  const voice = synth.getVoices().find((v) => v.lang.replace("_", "-").startsWith("ko"))
-  if (voice) utterance.voice = voice
   utterance.pitch = pitch
   utterance.rate = rate
-  synth.speak(utterance)
+  utterance.onerror = (e) => {
+    if (e.error !== "canceled" && e.error !== "interrupted") speechErrorListener?.(e.error)
+  }
+  utterance.onend = () => {
+    if (currentUtterance === utterance) currentUtterance = null
+  }
+  currentUtterance = utterance
+  // Safari drops a speak() issued right after cancel(), so only cancel when needed and wait a beat.
+  if (synth.speaking || synth.pending) {
+    synth.cancel()
+    setTimeout(() => synth.speak(utterance), 120)
+  } else {
+    synth.speak(utterance)
+  }
 }
 
 function speakAsDog(text: string) {
@@ -122,7 +149,7 @@ export default function DogChatPage() {
 
   const [phase, setPhase] = useState<Phase>("idle")
   const [capturedDataUrl, setCapturedDataUrl] = useState<string | null>(null)
-  const [emotion, setEmotion] = useState<{ label: string; score: number } | null>(null)
+  const [emotion, setEmotion] = useState<Emotion | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [streamingText, setStreamingText] = useState("")
   const [inputText, setInputText] = useState("")
@@ -139,6 +166,19 @@ export default function DogChatPage() {
   const speechSupported = useSyncExternalStore(noopSubscribe, canSpeak, () => false)
   const [speakOn, setSpeakOn] = useState(true)
   const speakOnRef = useRef(true)
+  const [soundError, setSoundError] = useState<string | null>(null)
+  const isIOS = useSyncExternalStore(
+    noopSubscribe,
+    () => /iPhone|iPad|iPod/.test(navigator.userAgent),
+    () => false,
+  )
+
+  useEffect(() => {
+    speechErrorListener = (code) => setSoundError(code)
+    return () => {
+      speechErrorListener = null
+    }
+  }, [])
 
   function toggleSpeak() {
     const next = !speakOnRef.current
@@ -238,11 +278,11 @@ export default function DogChatPage() {
         return
       }
 
-      const detectedEmotion = { label: emotionData.label, score: emotionData.score }
+      const detectedEmotion: Emotion = { label: emotionData.label, reason: emotionData.reason }
       setEmotion(detectedEmotion)
 
       setPhase("streaming")
-      await streamDogResponse(detectedEmotion.label, [], true)
+      await streamDogResponse(emotionForChat(detectedEmotion), [], true)
     } catch {
       setErrorMsg("네트워크 오류가 발생했습니다.")
       setPhase("error")
@@ -305,7 +345,7 @@ export default function DogChatPage() {
     const newMessages = [...messages, userMsg]
     setMessages(newMessages)
     setInputText("")
-    await streamDogResponse(emotion.label, newMessages, false)
+    await streamDogResponse(emotionForChat(emotion), newMessages, false)
   }
 
   function handleVoice() {
@@ -369,12 +409,25 @@ export default function DogChatPage() {
             size="sm"
             className="shrink-0 rounded-full h-9 px-3"
             disabled={isListening}
-            onClick={() => callDog(c.line(callName))}
+            onClick={() => {
+              setSoundError(null)
+              callDog(c.line(callName))
+            }}
           >
             {c.icon} {c.label}
           </Button>
         ))}
       </div>
+      {soundError && (
+        <p className="text-xs text-destructive">
+          소리를 낼 수 없어요 (오류: {soundError}). 새로고침한 뒤 다시 눌러 주세요.
+        </p>
+      )}
+      {isIOS && (
+        <p className="text-xs text-muted-foreground">
+          🔕 소리가 안 나면 아이폰 무음 모드를 꺼 주세요 (옆면 스위치 또는 제어 센터의 🔔)
+        </p>
+      )}
     </div>
   )
 
@@ -426,12 +479,14 @@ export default function DogChatPage() {
               />
             )}
             {emotion && (
-              <div className="absolute top-3 left-3">
+              <div className="absolute top-3 inset-x-3 flex flex-col items-start gap-1.5">
                 <Badge className="text-sm px-3 py-1 gap-1.5 bg-white/90 text-foreground shadow-md">
                   {EMOTION_EMOJI[emotion.label] ?? "🐾"}
                   <span className="font-semibold">{EMOTION_KR[emotion.label] ?? emotion.label}</span>
-                  <span className="text-muted-foreground">{(emotion.score * 100).toFixed(0)}%</span>
                 </Badge>
+                <p className="rounded-xl bg-white/90 px-3 py-2 text-xs leading-relaxed text-foreground shadow-md">
+                  {emotion.reason}
+                </p>
               </div>
             )}
             {!capturedDataUrl && errorMsg?.includes("카메라") && (
@@ -523,11 +578,13 @@ export default function DogChatPage() {
               />
             )}
             {emotion && (
-              <Badge className="text-sm px-3 py-1 gap-1.5 bg-white/90 text-foreground shadow-sm border">
-                {EMOTION_EMOJI[emotion.label] ?? "🐾"}
-                <span className="font-semibold">{EMOTION_KR[emotion.label] ?? emotion.label}</span>
-                <span className="text-muted-foreground">{(emotion.score * 100).toFixed(0)}%</span>
-              </Badge>
+              <div className="flex flex-col items-start gap-1 min-w-0">
+                <Badge className="text-sm px-3 py-1 gap-1.5 bg-white/90 text-foreground shadow-sm border">
+                  {EMOTION_EMOJI[emotion.label] ?? "🐾"}
+                  <span className="font-semibold">{EMOTION_KR[emotion.label] ?? emotion.label}</span>
+                </Badge>
+                <p className="text-xs leading-snug text-muted-foreground">{emotion.reason}</p>
+              </div>
             )}
           </div>
 
