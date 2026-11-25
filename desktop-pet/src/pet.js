@@ -18,8 +18,16 @@ const SPRITES = {
   bow: ["bow"],
   paw: ["paw"],
   eat: ["eat"],
+  bang: ["bang"],
+  shy: ["shy"],
+  highfive: ["highfive"],
+  beg: ["beg"],
+  belly: ["belly"],
+  yawn: ["yawn"],
 }
+const TRICKS = ["bang", "shy", "highfive", "beg", "belly", "yawn"]
 const POSE = { walk: "walk", run: "run", fetch: "run", spin: "run", sit: "sit", sleep: "sleep", jump: "jump", bow: "bow", paw: "paw", eat: "eat" }
+for (const t of TRICKS) POSE[t] = t
 const FRAME_MS = { walk: 130, run: 85 }
 const BASE_W = 222 // natural width of a walking frame = the dog's box width
 const BASE_H = 244
@@ -39,10 +47,16 @@ function drawSprite(now) {
     spriteEl.src = `assets/ppo/${name}.png`
   }
   const size = spriteSize[name]
-  if (size) spriteEl.style.width = `${(size[0] * S.w) / BASE_W}px`
+  const width = size ? (size[0] * S.w) / BASE_W : S.w
+  if (size) spriteEl.style.width = `${width}px`
+  // Wide poses (bang, belly) stick out of the box; keep them on screen at the edges.
+  const extra = Math.max(0, (width - S.w) / 2)
+  let shift = 0
+  if (S.x - extra < 0) shift = extra - S.x
+  else if (S.x + S.w + extra > S.W) shift = S.W - (S.x + S.w + extra)
   // The side-view frames face right; the front photo has the name tag text, so it never mirrors.
   const flip = pose === "front" ? 1 : S.facing
-  spriteEl.style.transform = `translateX(-50%) scaleX(${flip})`
+  spriteEl.style.transform = `translateX(calc(-50% + ${shift}px)) scaleX(${flip})`
 }
 
 const SIZES = { small: 110, medium: 150, large: 200 }
@@ -65,6 +79,12 @@ const LINES = {
   come: () => ["왔어요! 불렀어요?", "주인님~ 나 왔어!", "부르셨나요? 멍!"],
   bow: () => ["놀자 놀자!", "기지개~ 쭈욱!", "같이 놀아요!"],
   paw: () => ["손! 여기요~", "악수해요!"],
+  bang: () => ["으악! 당했다… 꼴깍", "빵! …(죽은 척 중)", "윽… 나 죽었어요… (실눈)"],
+  shy: () => ["부끄부끄~", "아잉 몰라요~ (얼굴 가림)", "보지 마세요… 부끄러워!"],
+  highfive: () => ["하이파이브! 짝!", "손바닥 짝! 왈!", "우리 최고!"],
+  beg: () => ["주세요~ 주세요~", "간식 하나만요… 네?", "두 발로 섰어요! 칭찬해 주세요!"],
+  belly: () => ["배 쓰담쓰담 해주세요~", "뒹굴뒹굴~ 기분 좋다!", "배 만져도 돼요! 헤헤"],
+  yawn: () => ["하아암~ 졸려…", "하품 나와요~", "아함… 조금 졸리다"],
 }
 
 const RANDOM_ACTIONS = [
@@ -76,6 +96,12 @@ const RANDOM_ACTIONS = [
   ["run", 8],
   ["spin", 6],
   ["bow", 5],
+  ["yawn", 3],
+  ["belly", 3],
+  ["shy", 2],
+  ["beg", 2],
+  ["highfive", 2],
+  ["bang", 1],
   ["sleep", 3],
 ]
 
@@ -90,6 +116,12 @@ const DURATIONS = {
   eat: [2600, 2600],
   land: [450, 450],
   bow: [1800, 2600],
+  bang: [3500, 4500],
+  shy: [2600, 3200],
+  highfive: [1800, 2200],
+  beg: [2600, 3400],
+  belly: [3500, 5000],
+  yawn: [2200, 2600],
   paw: [2200, 2800],
 }
 
@@ -431,6 +463,10 @@ window.pet.onCommand(async ({ type }) => {
   else if (type === "ball") dropItem("ball")
   else if (type === "sleep") goToBed(lineFor("sleep"))
   else if (type === "wake") wakeUp()
+  else if (type.startsWith("trick:")) {
+    const t = type.slice(6)
+    if (TRICKS.includes(t) && S.action !== "fall") doAction(t, { line: lineFor(t) })
+  }
   else if (type === "come") {
     await comeToCursor(lineFor("come"))
   }
@@ -512,7 +548,8 @@ function applySettings(s) {
   S.sprite = !s.customPhoto
   petEl.classList.toggle("sprite", S.sprite)
   if (!s.sound && "speechSynthesis" in window) window.speechSynthesis.cancel()
-  S.w = Math.round((SIZES[s.size] || SIZES.medium) * (S.sprite ? 1.2 : 1))
+  // 0.7: the user asked for the dog at 70% of its earlier size.
+  S.w = Math.round((SIZES[s.size] || SIZES.medium) * (S.sprite ? 1.2 : 1) * 0.7)
   if (s.photo && imgEl.dataset.src !== s.photo) {
     imgEl.dataset.src = s.photo
     imgEl.onload = () => {

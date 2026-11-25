@@ -266,6 +266,17 @@ function buildTrayMenu() {
     { label: `💬 ${name}랑 대화하기`, click: openChat },
     { label: `🐶 ${name} 부르기`, click: () => sendCommand("come") },
     { label: "🦴 간식 주기", click: () => sendCommand("treat") },
+    {
+      label: "🎪 재주 부리기",
+      submenu: [
+        ["bang", "🔫 빵!"],
+        ["shy", "🙈 얼굴 가리기"],
+        ["highfive", "🖐️ 하이파이브"],
+        ["beg", "🙏 애교 (주세요~)"],
+        ["belly", "🐾 배 보이고 뒹굴"],
+        ["yawn", "🥱 하품"],
+      ].map(([t, label]) => ({ label, click: () => sendCommand(`trick:${t}`) })),
+    },
     { label: "🎾 공 던져 주기", click: () => sendCommand("ball") },
     ...(settings.asleep ? [] : [{ label: "💤 재우기 (자고 나면 사라져요)", click: () => sendCommand("sleep") }]),
     { type: "separator" },
@@ -389,6 +400,12 @@ async function runSmokeTest() {
     ["09-chat-name", "window.dispatchChat('내 이름은 민지야')", 500],
     ["10-chat-treat", "window.dispatchChat('간식 줄까?')", 2500],
     ["11-drag", "doAction('drag'); S.y = 200", 400],
+    ["12-bang", "window.dispatchChat('빵!')", 900],
+    ["13-shy", "window.dispatchChat('얼굴!')", 700],
+    ["14-highfive", "window.dispatchChat('하이파이브')", 700],
+    ["15-beg", "doAction('beg', { duration: 99999 })", 700],
+    ["16-belly", "window.dispatchChat('배 쓰담쓰담')", 700],
+    ["17-yawn", "window.dispatchChat('하품')", 700],
   ]
   for (const [label, code, ms] of steps) {
     if (code) await js(code)

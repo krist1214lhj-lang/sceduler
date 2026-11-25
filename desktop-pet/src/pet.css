@@ -131,3 +131,12 @@ html, body {
 #pet.sprite .dog-bow { animation: sprite-bob .5s ease-in-out infinite }
 #pet.sprite .dog-paw { animation: sprite-paw .5s ease-in-out infinite }
 #pet.sprite.sleeping #zzz { right: 8%; top: 30%; }
+@keyframes sprite-wiggle { 0%,100% { transform: rotate(-3deg) } 50% { transform: rotate(3deg) } }
+@keyframes sprite-bang { 0% { transform: translateY(-10px) } 40% { transform: translateY(0) } 55% { transform: translateY(-6px) } 70%,100% { transform: translateY(0) } }
+@keyframes sprite-beg { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-6px) } }
+#pet.sprite .dog-bang { animation: sprite-bang .6s ease-out 1 }
+#pet.sprite .dog-shy { animation: sprite-wiggle .7s ease-in-out infinite }
+#pet.sprite .dog-highfive { animation: sprite-paw .4s ease-in-out infinite }
+#pet.sprite .dog-beg { animation: sprite-beg .5s ease-in-out infinite }
+#pet.sprite .dog-belly { animation: sprite-wiggle .45s ease-in-out infinite }
+#pet.sprite .dog-yawn { animation: sprite-breathe 1.2s ease-in-out infinite }

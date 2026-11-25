@@ -31,6 +31,12 @@
     { test: /(무슨\s*종|품종|견종)/, reply: () => ({ text: "살구색 토이푸들이에요! 곱슬곱슬 털 예쁘죠?", action: "spin" }) },
 
     { test: /^(앉아|앉자|sit)|앉아/, reply: () => ({ text: pick(["앉았어요! 착하죠?", "얌전히 앉았어요~ 간식 주실 거죠?"]), action: "sit" }) },
+    { test: /(빵|bang)/i, reply: () => ({ text: pick(["으악! 당했다… 꼴깍", "빵! …(죽은 척 중이에요)"]), action: "bang" }) },
+    { test: /(얼굴|부끄|가려|숨어)/, reply: () => ({ text: pick(["부끄부끄~ (얼굴 가림)", "아잉 몰라요~"]), action: "shy" }) },
+    { test: /(하이\s*파이브|하이5|짝)/, reply: () => ({ text: pick(["하이파이브! 짝!", "손바닥 짝! 왈!"]), action: "highfive" }) },
+    { test: /(애교|주세요|부탁|두\s*발|서\s*봐)/, reply: () => ({ text: pick(["주세요~ 주세요~ (두 발로 서기)", "애교 발사! 헤헤"]), action: "beg" }) },
+    { test: /(뒹굴|구르|배\s*(보여|만져|쓰담|긁)|배꼽)/, reply: () => ({ text: pick(["배 쓰담쓰담 해주세요~", "뒹굴뒹굴~ 기분 좋다!"]), action: "belly" }) },
+    { test: /(하품|아함|하아암)/, reply: () => ({ text: "하아암~ 저도 하품 나와요…", action: "yawn" }) },
     { test: /^손|손\s*(줘|!)|악수/, reply: () => ({ text: pick(["손! 여기요~", "자, 손! 멍!"]), action: "paw" }) },
     { test: /(엎드려|누워|코\s*자|낮잠|자자|자러|잘\s*자|굿\s*나잇|졸려)/, reply: () => ({ text: pick(["네에… 새근새근… zzz", "잘 자요~ 저도 잘게요… zzz"]), action: "sleep" }) },
     { test: /(점프|뛰어)/, reply: () => ({ text: pick(["점프! 왈왈!", "높이 뛰었죠?!"]), action: "jump" }) },
