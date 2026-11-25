@@ -130,6 +130,7 @@ const ANIMATIONS = `
 export default function DogPlayPage() {
   const stageRef = useRef<HTMLDivElement>(null)
   const dogRef = useRef<HTMLDivElement>(null)
+  const toolbarRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [action, setAction] = useState<Action>("idle")
@@ -140,10 +141,24 @@ export default function DogPlayPage() {
   const [soundOn, setSoundOn] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [hintClosed, setHintClosed] = useState(false)
 
   const storedName = useSyncExternalStore(subscribeName, readName, () => "")
   const customPhoto = useSyncExternalStore(subscribePhoto, readPhoto, () => null)
   const speechSupported = useSyncExternalStore(noopSubscribe, canSpeak, () => false)
+  const fullscreenSupported = useSyncExternalStore(noopSubscribe, () => !!document.fullscreenEnabled, () => false)
+  const platform = useSyncExternalStore(
+    noopSubscribe,
+    () => (/iPhone|iPad|iPod/.test(navigator.userAgent) ? "ios" : /Android/.test(navigator.userAgent) ? "android" : "desktop"),
+    () => "desktop",
+  )
+  const isInstalled = useSyncExternalStore(
+    noopSubscribe,
+    () =>
+      window.matchMedia("(display-mode: standalone)").matches ||
+      (navigator as Navigator & { standalone?: boolean }).standalone === true,
+    () => true,
+  )
   const photo = customPhoto ?? DEFAULT_PHOTO
   const name = storedName.trim() || (customPhoto ? "멍멍이" : DEFAULT_NAME)
 
@@ -171,11 +186,13 @@ export default function DogPlayPage() {
       const dog = dogRef.current
       if (stage && dog) {
         const size = dog.offsetWidth
+        // Keep the dog (and its speech bubble) below the toolbar, which is taller on phones.
+        const floorTop = Math.max(stage.clientHeight * 0.28, (toolbarRef.current?.offsetHeight ?? 0) + 44)
         const bounds = {
           minX: 0,
           maxX: Math.max(0, stage.clientWidth - size),
-          minY: stage.clientHeight * 0.28,
-          maxY: Math.max(stage.clientHeight * 0.28, stage.clientHeight - dog.offsetHeight - 8),
+          minY: floorTop,
+          maxY: Math.max(floorTop, stage.clientHeight - dog.offsetHeight - 8),
           size,
         }
         boundsRef.current = bounds
@@ -356,7 +373,7 @@ export default function DogPlayPage() {
   })
 
   return (
-    <main className="relative h-svh w-full overflow-hidden select-none">
+    <main className="relative h-svh w-full touch-manipulation overflow-hidden select-none">
       <style>{ANIMATIONS}</style>
 
       <div
@@ -372,7 +389,7 @@ export default function DogPlayPage() {
           className="absolute left-1/2 top-[58%] h-[30%] w-[55%] -translate-x-1/2 rounded-[50%] opacity-60"
           style={{ background: "radial-gradient(#f9c9c0, #f3b2a6)" }}
         />
-        <div className="absolute left-[8%] top-[5%] h-[18%] w-[16%] rounded-lg border-8 border-white/80 bg-sky-200/80 shadow-inner" />
+        <div className="absolute left-[8%] top-[5%] hidden h-[18%] w-[16%] rounded-lg sm:block border-8 border-white/80 bg-sky-200/80 shadow-inner" />
 
         {item && (
           <div
@@ -426,7 +443,7 @@ export default function DogPlayPage() {
                 src={photo}
                 alt={name}
                 draggable={false}
-                className="aspect-square w-full rounded-full border-4 border-white object-cover shadow-xl"
+                className="aspect-square w-full rounded-full border-4 border-white object-cover shadow-xl [-webkit-touch-callout:none]"
               />
             </div>
           </div>
@@ -445,40 +462,76 @@ export default function DogPlayPage() {
         </div>
       </div>
 
-      <div className="absolute inset-x-0 top-0 z-40 flex flex-wrap items-center gap-1.5 bg-white/70 px-3 py-2 backdrop-blur">
-        <span className="mr-1 font-semibold text-neutral-800">🐶 {name} 놀이터</span>
-        <Button size="sm" variant="outline" onClick={() => throwItem("ball")}>
-          🎾 공 던지기
+      {/* Labels collapse to icons on phones so the toolbar stays one or two rows. */}
+      <div
+        ref={toolbarRef}
+        className="absolute inset-x-0 top-0 z-40 flex flex-wrap items-center gap-1.5 bg-white/70 px-3 pb-2 backdrop-blur"
+        style={{ paddingTop: "max(0.5rem, env(safe-area-inset-top))" }}
+      >
+        <span className="mr-1 font-semibold text-neutral-800">
+          🐶 {name}
+          <span className="hidden sm:inline"> 놀이터</span>
+        </span>
+        <Button size="sm" variant="outline" title="공 던지기" onClick={() => throwItem("ball")}>
+          🎾<span className="hidden sm:inline"> 공 던지기</span>
         </Button>
-        <Button size="sm" variant="outline" onClick={() => throwItem("bone")}>
-          🦴 간식 주기
+        <Button size="sm" variant="outline" title="간식 주기" onClick={() => throwItem("bone")}>
+          🦴<span className="hidden sm:inline"> 간식 주기</span>
         </Button>
-        <Button size="sm" variant="outline" onClick={() => doAction("sleep", { line: lineFor("sleep") })}>
-          💤 재우기
+        <Button size="sm" variant="outline" title="재우기" onClick={() => doAction("sleep", { line: lineFor("sleep") })}>
+          💤<span className="hidden sm:inline"> 재우기</span>
         </Button>
-        <Button size="sm" variant="outline" onClick={() => doAction("spin", { line: lineFor("spin") })}>
-          🎉 신나게
+        <Button size="sm" variant="outline" title="신나게" onClick={() => doAction("spin", { line: lineFor("spin") })}>
+          🎉<span className="hidden sm:inline"> 신나게</span>
         </Button>
-        <div className="ml-auto flex flex-wrap items-center gap-1.5">
+        <div className="ml-auto flex flex-wrap items-center gap-1">
           {speechSupported && (
-            <Button size="sm" variant="ghost" onClick={toggleSound}>
-              {soundOn ? "🔊 소리 켬" : "🔇 소리 끔"}
+            <Button size="sm" variant="ghost" title={soundOn ? "소리 끄기" : "소리 켜기"} onClick={toggleSound}>
+              {soundOn ? "🔊" : "🔇"}
+              <span className="hidden sm:inline">{soundOn ? " 소리 켬" : " 소리 끔"}</span>
             </Button>
           )}
-          <Button size="sm" variant="ghost" onClick={goFullscreen}>
-            ⛶ 전체 화면
+          {fullscreenSupported && !isInstalled && (
+            <Button size="sm" variant="ghost" title="전체 화면" onClick={goFullscreen}>
+              ⛶<span className="hidden sm:inline"> 전체 화면</span>
+            </Button>
+          )}
+          <Button size="sm" variant="ghost" title="설정" onClick={() => setSettingsOpen((o) => !o)}>
+            ⚙️<span className="hidden sm:inline"> 설정</span>
           </Button>
-          <Button size="sm" variant="ghost" onClick={() => setSettingsOpen((o) => !o)}>
-            ⚙️ 설정
-          </Button>
-          <Link href="/dog-chat" className="rounded-md px-2 py-1 text-sm text-neutral-700 hover:bg-black/5">
-            💬 대화하기
+          <Link
+            href="/dog-chat"
+            title="대화하기"
+            className="rounded-md px-2 py-1 text-sm text-neutral-700 hover:bg-black/5"
+          >
+            💬<span className="hidden sm:inline"> 대화하기</span>
           </Link>
         </div>
       </div>
 
+      {!isInstalled && !hintClosed && platform !== "desktop" && (
+        <div
+          className="absolute inset-x-3 z-40 flex items-start gap-2 rounded-2xl border border-amber-200 bg-white/95 p-3 text-xs leading-relaxed text-neutral-800 shadow-lg"
+          style={{ bottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
+        >
+          <span className="flex-1">
+            📲 <b>앱처럼 설치하기</b>:{" "}
+            {platform === "ios"
+              ? "사파리 아래쪽 공유 버튼(네모에 위쪽 화살표) → '홈 화면에 추가'를 누르세요."
+              : "크롬 오른쪽 위 메뉴(⋮) → '홈 화면에 추가' 또는 '앱 설치'를 누르세요."}{" "}
+            홈 화면의 {name} 얼굴 아이콘으로 바로 열려요.
+          </span>
+          <button className="px-1 text-base text-neutral-500" aria-label="닫기" onClick={() => setHintClosed(true)}>
+            ✕
+          </button>
+        </div>
+      )}
+
       {settingsOpen && (
-        <div className="absolute right-3 top-14 z-50 flex w-[min(340px,calc(100vw-24px))] flex-col gap-3 rounded-2xl border bg-card p-4 text-sm shadow-xl">
+        <div
+          className="absolute right-3 z-50 flex w-[min(340px,calc(100vw-24px))] flex-col gap-3 rounded-2xl border bg-card p-4 text-sm shadow-xl"
+          style={{ top: "calc(3.5rem + env(safe-area-inset-top))" }}
+        >
           <label className="flex flex-col gap-1">
             <span className="text-muted-foreground">강아지 이름</span>
             <Input
@@ -501,7 +554,7 @@ export default function DogPlayPage() {
               )}
             </div>
             <span className="text-xs text-muted-foreground">
-              고른 사진은 이 컴퓨터의 브라우저에만 저장되고 어디에도 올라가지 않아요.
+              고른 사진은 이 기기의 브라우저에만 저장되고 어디에도 올라가지 않아요.
             </span>
           </div>
           <div className="flex flex-col gap-1.5 border-t pt-3">
@@ -514,7 +567,7 @@ export default function DogPlayPage() {
             </span>
           </div>
           <span className={cn("text-xs text-muted-foreground")}>
-            💡 바닥을 클릭하면 달려오고, {name}를 클릭하면 좋아해요.
+            💡 바닥을 누르면 달려오고, {name}를 누르면 좋아해요.
           </span>
         </div>
       )}
