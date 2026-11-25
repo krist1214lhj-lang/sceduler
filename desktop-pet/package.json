@@ -1,0 +1,53 @@
+{
+  "name": "ppo-desktop-pet",
+  "productName": "PpoPet",
+  "version": "1.0.0",
+  "description": "뽀식이 데스크톱 펫 - 화면 위를 돌아다니는 강아지",
+  "author": "Ppo",
+  "license": "MIT",
+  "private": true,
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "smoke": "electron . --smoke-test=out",
+    "dist:win": "electron-builder --win --publish never"
+  },
+  "build": {
+    "appId": "com.ppo.desktoppet",
+    "productName": "PpoPet",
+    "copyright": "Ppo",
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "runAfterFinish": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "뽀식이",
+      "uninstallDisplayName": "뽀식이 데스크톱 펫",
+      "artifactName": "PpoPet-Setup.exe"
+    }
+  },
+  "devDependencies": {
+    "electron": "45.3.0",
+    "electron-builder": "26.18.0"
+  }
+}
