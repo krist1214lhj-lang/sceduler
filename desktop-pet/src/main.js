@@ -1,7 +1,7 @@
 // 뽀식이 데스크톱 펫 - main process.
 // One transparent, click-through, always-on-top window covers the work area
 // (the screen minus the taskbar) of one monitor; the dog lives inside it.
-const { app, BrowserWindow, Tray, Menu, ipcMain, screen, nativeImage, dialog } = require("electron")
+const { app, BrowserWindow, Tray, Menu, ipcMain, screen, nativeImage, dialog, powerMonitor } = require("electron")
 const path = require("path")
 const fs = require("fs")
 
@@ -145,6 +145,11 @@ function createPetWindow() {
   })
   petWin.on("closed", () => (petWin = null))
 
+  // Tell the dog how long the owner has been away from the keyboard and mouse.
+  setInterval(() => {
+    if (petWin && !petWin.isDestroyed() && petWin.isVisible()) petWin.webContents.send("idle", powerMonitor.getSystemIdleTime())
+  }, 5000)
+
   // Other topmost windows (the taskbar, video players) can push us down; climb back up now and then.
   setInterval(() => {
     if (petWin && !petWin.isDestroyed() && petWin.isVisible()) petWin.setAlwaysOnTop(true, "screen-saver")
@@ -275,6 +280,9 @@ function buildTrayMenu() {
         ["beg", "🙏 애교 (주세요~)"],
         ["belly", "🐾 배 보이고 뒹굴"],
         ["yawn", "🥱 하품"],
+        ["zoomies", "💨 우다다 달리기"],
+        ["chase", "🌀 꼬리 잡기"],
+        ["peek", "👀 숨바꼭질 (빼꼼)"],
       ].map(([t, label]) => ({ label, click: () => sendCommand(`trick:${t}`) })),
     },
     { label: "🎾 공 던져 주기", click: () => sendCommand("ball") },
@@ -406,6 +414,14 @@ async function runSmokeTest() {
     ["15-beg", "doAction('beg', { duration: 99999 })", 700],
     ["16-belly", "window.dispatchChat('배 쓰담쓰담')", 700],
     ["17-yawn", "window.dispatchChat('하품')", 700],
+    ["18-zoomies", "startZoomies()", 900],
+    ["19-chase", "startChase()", 700],
+    ["20-peek", "S.x = 300; startPeek()", 9000],
+    ["21-dblclick-bang", "window.dispatchEvent(new MouseEvent('dblclick', { clientX: S.x + S.w / 2, clientY: S.y + S.h / 2 }))", 600],
+    ["22-rub", "for (let i = 0; i < 14; i++) trackRub(S.x + S.w / 2 + (i % 2 ? 20 : -20), performance.now())", 600],
+    ["23-nap", "window.__idle(400)", 800],
+    ["24-welcome", "window.__idle(1)", 600],
+    ["25-chat-zoomies", "window.dispatchChat('우다다')", 600],
   ]
   for (const [label, code, ms] of steps) {
     if (code) await js(code)

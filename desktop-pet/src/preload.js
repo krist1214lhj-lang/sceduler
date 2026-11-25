@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld("pet", {
   command: (type) => ipcRenderer.send("pet-command", type),
   onSettings: (fn) => ipcRenderer.on("settings", (_e, data) => fn(data)),
   onCommand: (fn) => ipcRenderer.on("command", (_e, data) => fn(data)),
+  onIdle: (fn) => ipcRenderer.on("idle", (_e, seconds) => fn(seconds)),
   // conversation: chat window -> main -> pet window, and the dog's reply back
   sendChat: (text) => ipcRenderer.send("chat-send", text),
   onChat: (fn) => ipcRenderer.on("chat", (_e, text) => fn(text)),

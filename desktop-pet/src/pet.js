@@ -26,7 +26,7 @@ const SPRITES = {
   yawn: ["yawn"],
 }
 const TRICKS = ["bang", "shy", "highfive", "beg", "belly", "yawn"]
-const POSE = { walk: "walk", run: "run", fetch: "run", spin: "run", sit: "sit", sleep: "sleep", jump: "jump", bow: "bow", paw: "paw", eat: "eat" }
+const POSE = { walk: "walk", run: "run", fetch: "run", spin: "run", chase: "run", nap: "sleep", sit: "sit", sleep: "sleep", jump: "jump", bow: "bow", paw: "paw", eat: "eat" }
 for (const t of TRICKS) POSE[t] = t
 const FRAME_MS = { walk: 130, run: 85 }
 const BASE_W = 222 // natural width of a walking frame = the dog's box width
@@ -52,7 +52,8 @@ function drawSprite(now) {
   // Wide poses (bang, belly) stick out of the box; keep them on screen at the edges.
   const extra = Math.max(0, (width - S.w) / 2)
   let shift = 0
-  if (S.x - extra < 0) shift = extra - S.x
+  if (S.free) shift = 0
+  else if (S.x - extra < 0) shift = extra - S.x
   else if (S.x + S.w + extra > S.W) shift = S.W - (S.x + S.w + extra)
   // The side-view frames face right; the front photo has the name tag text, so it never mirrors.
   const flip = pose === "front" ? 1 : S.facing
@@ -85,6 +86,14 @@ const LINES = {
   beg: () => ["주세요~ 주세요~", "간식 하나만요… 네?", "두 발로 섰어요! 칭찬해 주세요!"],
   belly: () => ["배 쓰담쓰담 해주세요~", "뒹굴뒹굴~ 기분 좋다!", "배 만져도 돼요! 헤헤"],
   yawn: () => ["하아암~ 졸려…", "하품 나와요~", "아함… 조금 졸리다"],
+  zoomies: () => ["우다다다다!!", "갑자기 신난다!!", "달려라 뽀식이!!"],
+  chase: () => ["꼬리 잡을 거야!", "내 꼬리 어디 갔지?", "거기 서! 꼬리야!"],
+  peek: () => ["빼꼼!", "나 찾아봐라~", "여기 있지롱!"],
+  follow: () => ["주인님 어디 가요~", "같이 가요!", "어? 주인님 손이다!"],
+  rub: () => ["헤헤 간지러워~ 더 해줘!", "아~ 거기 거기!", "쓰담쓰담 최고예요!"],
+  hungry: () => ["배고파요… 간식 주세요~", "꼬르륵… 간식 시간 아니에요?", "간식… 간식…!"],
+  welcome: () => ["주인님 왔다!!", "기다렸어요! 왈왈!", "어디 갔다 왔어요~ 보고 싶었어요!"],
+  nap: () => ["주인님 어디 갔지… 기다리다 잘래요 zzz", "아무도 없네… 낮잠 자야지… zzz"],
 }
 
 const RANDOM_ACTIONS = [
@@ -102,6 +111,10 @@ const RANDOM_ACTIONS = [
   ["beg", 2],
   ["highfive", 2],
   ["bang", 1],
+  ["zoomies", 3],
+  ["chase", 3],
+  ["peek", 2],
+  ["follow", 3],
   ["sleep", 3],
 ]
 
@@ -122,6 +135,8 @@ const DURATIONS = {
   beg: [2600, 3400],
   belly: [3500, 5000],
   yawn: [2200, 2600],
+  chase: [2400, 2400],
+  nap: [1e9, 1e9],
   paw: [2200, 2800],
 }
 
@@ -163,9 +178,17 @@ const S = {
   mouseY: -1,
   lastStretch: performance.now(),
   greeted: false,
+  entered: false,
   sprite: true,
   ownerName: "",
   lastFed: Date.now(),
+  script: null, // a short sequence of steps (zoomies, peek…), see runScript()
+  speed: 0,
+  free: false, // may leave the screen (peeking from the edge)
+  nextLook: 0,
+  rub: { dir: 0, flips: 0, t: 0, lastX: -1 },
+  napping: false,
+  lastChime: -1,
 }
 
 window.__petState = () => ({
@@ -215,7 +238,7 @@ function say(text) {
 // ---------- actions ----------
 function setAnim(name) {
   bodyEl.className = `dog-${name}`
-  petEl.classList.toggle("sleeping", name === "sleep")
+  petEl.classList.toggle("sleeping", name === "sleep" || name === "nap")
 }
 
 let bedTimer = null
@@ -243,6 +266,11 @@ function wakeUp() {
 
 function doAction(a, opts = {}) {
   if (a !== "sleep") cancelBed()
+  if (!opts.keepScript) S.script = null
+  if (a !== "nap") S.napping = false
+  S.speed = opts.speed || (a === "walk" ? 90 : 330)
+  S.free = Boolean(opts.free)
+  if (opts.face) S.facing = opts.face
   S.action = a
   setAnim(a)
   S.targetX = opts.targetX ?? null
@@ -273,8 +301,81 @@ function timeLine() {
   return null
 }
 
+// ---------- little routines made of several steps ----------
+function runScript(steps) {
+  S.script = steps.slice()
+  nextStep()
+}
+
+function nextStep() {
+  const st = S.script && S.script.shift()
+  if (!st) {
+    S.script = null
+    return false
+  }
+  doAction(st.a, { targetX: st.x, line: st.line, duration: st.d, speed: st.speed, free: st.free, face: st.face, keepScript: true })
+  return true
+}
+
+const span = () => Math.max(0, S.W - S.w)
+
+function startZoomies(line) {
+  removeItem()
+  const fast = 600
+  const far = S.x < span() / 2 ? span() : 0
+  runScript([
+    { a: "run", x: far, speed: fast, line: line || lineFor("zoomies") },
+    { a: "run", x: span() - far, speed: fast },
+    { a: "run", x: far, speed: fast },
+    { a: "run", x: span() / 2, speed: fast, line: "우다다다다!!" },
+    { a: "bow", d: 2200, line: pick(["헥헥… 신났다!", "헥헥 재밌다!"]) },
+  ])
+}
+
+function startChase(line) {
+  runScript([
+    { a: "chase", d: 2400, line: line || lineFor("chase") },
+    { a: "sit", d: 2200, line: pick(["어질어질~", "놓쳤다… 다음엔 잡을 거야!"]) },
+  ])
+}
+
+function startPeek(line) {
+  removeItem()
+  const left = S.x + S.w / 2 < S.W / 2
+  const edge = left ? 0 : span()
+  const hidden = left ? -S.w * 1.1 : span() + S.w * 1.1
+  const peekX = left ? -S.w * 0.5 : span() + S.w * 0.5
+  const inward = left ? 1 : -1
+  runScript([
+    { a: "walk", x: edge, line: "쉿… 숨바꼭질!" },
+    { a: "run", x: hidden, free: true },
+    { a: "idle", d: 2500, free: true },
+    { a: "walk", x: peekX, free: true },
+    { a: "sit", d: 2600, free: true, face: inward, line: line || lineFor("peek") },
+    { a: "run", x: left ? S.w : span() - S.w, free: true, line: "찾았다~ 히히!" },
+  ])
+}
+
+function followCursor(line) {
+  if (S.mouseX < 0) return false
+  doAction("run", { targetX: clamp(S.mouseX - S.w / 2, 0, span()), line: line || lineFor("follow") })
+  return true
+}
+
+const SPECIAL = { zoomies: startZoomies, chase: startChase, peek: startPeek }
+
 function pickNext() {
+  // Hungry dogs beg now and then.
+  if (Date.now() - S.lastFed > 3 * 60 * 60 * 1000 && Math.random() < 0.12) {
+    doAction("beg", { line: lineFor("hungry") })
+    return
+  }
   const a = pickAction()
+  if (SPECIAL[a]) return SPECIAL[a]()
+  if (a === "follow") {
+    if (!followCursor()) doAction("idle")
+    return
+  }
   const special = a === "idle" || a === "sit" ? timeLine() : null
   const line = special || (a === "sleep" || Math.random() < 0.15 ? lineFor(a) : undefined)
   if (a === "walk" || a === "run") doAction(a, { targetX: randomWalkX(), line })
@@ -304,6 +405,7 @@ function arrive() {
     else doAction("happy", { line: "잡았다! 또 던져줘!" })
     return
   }
+  if (S.script && nextStep()) return
   doAction("idle", { duration: 1500 })
 }
 
@@ -403,10 +505,45 @@ window.addEventListener("mousemove", (e) => {
   S.mouseY = e.clientY
   const over = isOverPet(e.clientX, e.clientY)
   setIgnore(!over)
+  const now = performance.now()
+  if (over) trackRub(e.clientX, now)
+  else if (["idle", "sit", "wag"].includes(S.action) && !S.script && now > S.nextLook) {
+    // Notice the cursor nearby: look at it, and sometimes trot over.
+    const dx = e.clientX - (S.x + S.w / 2)
+    if (Math.abs(dx) < 260 && Math.abs(e.clientY - (S.y + S.h / 2)) < 260) {
+      S.nextLook = now + 5000
+      S.facing = dx < 0 ? -1 : 1
+      if (Math.random() < 0.3) followCursor()
+    }
+  }
   if (over && !S.hovering && ["idle", "sit", "walk"].includes(S.action)) {
     doAction("wag", { line: Math.random() < 0.4 ? lineFor("hover") : undefined })
   }
   S.hovering = over
+})
+
+// Rubbing the dog (moving the mouse back and forth over it) gets a belly roll.
+function trackRub(x, now) {
+  const r = S.rub
+  if (now - r.t > 1500) r.flips = 0
+  if (r.lastX >= 0) {
+    const dir = Math.sign(x - r.lastX)
+    if (dir && r.dir && dir !== r.dir && Math.abs(x - r.lastX) > 2) {
+      r.flips++
+      r.t = now
+    }
+    if (dir) r.dir = dir
+  }
+  r.lastX = x
+  if (r.flips >= 5 && S.action !== "belly" && !S.drag) {
+    r.flips = 0
+    burstHearts()
+    doAction("belly", { line: lineFor("rub") })
+  }
+}
+
+window.addEventListener("dblclick", (e) => {
+  if (isOverPet(e.clientX, e.clientY)) doAction("bang", { line: lineFor("bang") })
 })
 
 window.addEventListener("contextmenu", (e) => {
@@ -465,7 +602,9 @@ window.pet.onCommand(async ({ type }) => {
   else if (type === "wake") wakeUp()
   else if (type.startsWith("trick:")) {
     const t = type.slice(6)
-    if (TRICKS.includes(t) && S.action !== "fall") doAction(t, { line: lineFor(t) })
+    if (S.action === "fall") return
+    if (SPECIAL[t]) SPECIAL[t]()
+    else if (TRICKS.includes(t)) doAction(t, { line: lineFor(t) })
   }
   else if (type === "come") {
     await comeToCursor(lineFor("come"))
@@ -506,6 +645,10 @@ async function handleChat(text) {
       return doAction("walk", { targetX: randomWalkX(), line: r.text })
     case "sleep":
       return goToBed(r.text)
+    case "zoomies":
+    case "chase":
+    case "peek":
+      return SPECIAL[r.action](r.text)
     default:
       if (S.action === "sleep" && r.action !== "sleep") burstHearts()
       return doAction(r.action || "wag", { line: r.text })
@@ -564,6 +707,41 @@ function applySettings(s) {
 
 window.pet.onSettings(applySettings)
 
+// ---------- the owner's presence (keyboard + mouse idle time from Windows) ----------
+window.pet.onIdle((seconds) => handleIdle(seconds))
+window.__idle = (seconds) => handleIdle(seconds) // used by the smoke test
+function handleIdle(seconds) {
+  if (S.drag || S.action === "fall") return
+  if (seconds >= 300 && !S.napping && !["sleep", "nap"].includes(S.action)) {
+    removeItem()
+    doAction("nap", { line: lineFor("nap") })
+    S.napping = true
+  } else if (seconds < 5 && S.napping) {
+    S.napping = false
+    burstHearts()
+    doAction("jump", { line: lineFor("welcome") })
+  }
+}
+
+// ---------- hourly chime ----------
+const CHIME = {
+  9: "오늘도 힘내요!",
+  12: "점심 먹을 시간이에요!",
+  15: "물 한 잔 마셔요~",
+  18: "퇴근 시간이다! 수고했어요!",
+  22: "슬슬 쉴 시간이에요~",
+}
+setInterval(() => {
+  const d = new Date()
+  const h = d.getHours()
+  if (d.getMinutes() !== 0 || h === S.lastChime || h < 7) return
+  S.lastChime = h
+  if (S.drag || S.napping || ["sleep", "nap", "fall"].includes(S.action)) return
+  const ap = h < 12 ? "오전" : "오후"
+  const extra = CHIME[h] || pick(["물 한 잔 마셔요~", "눈 좀 쉬어요~", "기지개 한 번 쭉!"])
+  doAction("sit", { line: `${ap} ${h % 12 || 12}시예요! ${extra}`, duration: 4000 })
+}, 15000)
+
 // ---------- main loop ----------
 let last = performance.now()
 function loop(now) {
@@ -572,8 +750,9 @@ function loop(now) {
   S.W = window.innerWidth
   S.H = window.innerHeight
 
-  if (S.x < 0) {
+  if (!S.entered) {
     // Entrance: drop in from the top of the screen.
+    S.entered = true
     S.x = Math.random() * Math.max(0, S.W - S.w)
     S.y = -S.h
     S.vx = 0
@@ -618,7 +797,7 @@ function loop(now) {
     if (moving && S.targetX !== null) {
       const dx = S.targetX - S.x
       const itemMoving = a === "fetch" && S.item && (S.item.vx !== 0 || S.item.y < S.H - S.item.size)
-      const step = (a === "walk" ? 90 : 330) * dt
+      const step = S.speed * dt
       if (Math.abs(dx) <= step && !itemMoving) {
         S.x = S.targetX
         arrive()
@@ -627,11 +806,12 @@ function loop(now) {
         S.facing = dx < 0 ? -1 : 1
       }
     } else if (now > S.until) {
-      pickNext()
+      if (!(S.script && nextStep())) pickNext()
     }
+    if (a === "chase") S.facing = Math.floor(now / 170) % 2 ? 1 : -1
   }
 
-  S.x = clamp(S.x, 0, Math.max(0, S.W - S.w))
+  if (!S.free) S.x = clamp(S.x, 0, Math.max(0, S.W - S.w))
   // The dog may walk out from under a resting cursor: let clicks through again.
   if (!S.ignoring && !S.drag && !isOverPet(S.mouseX, S.mouseY)) {
     setIgnore(true)

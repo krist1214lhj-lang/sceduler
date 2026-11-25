@@ -126,7 +126,7 @@ html, body {
 #pet.sprite .dog-walk { animation: sprite-bob .26s ease-in-out infinite }
 #pet.sprite .dog-run, #pet.sprite .dog-fetch { animation: sprite-bob .17s ease-in-out infinite }
 #pet.sprite .dog-sit { animation: sprite-breathe 2.4s ease-in-out infinite }
-#pet.sprite .dog-sleep { animation: sprite-breathe 3s ease-in-out infinite }
+#pet.sprite .dog-sleep, #pet.sprite .dog-nap { animation: sprite-breathe 3s ease-in-out infinite }
 #pet.sprite .dog-eat { animation: sprite-nod .4s ease-in-out infinite }
 #pet.sprite .dog-bow { animation: sprite-bob .5s ease-in-out infinite }
 #pet.sprite .dog-paw { animation: sprite-paw .5s ease-in-out infinite }
