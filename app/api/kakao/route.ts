@@ -5,7 +5,7 @@ import { dogReply, type DogPose } from "@/lib/dog-brain"
 
 const DOG_NAME = "뽀식이"
 
-const QUICK_REPLIES = ["안녕!", "앉아", "손", "간식 줄까?", "산책 가자", "놀자", "사랑해", "잘 자"]
+const QUICK_REPLIES = ["안녕!", "앉아", "손", "빵!", "얼굴!", "하이파이브", "간식 줄까?", "산책 가자", "사랑해", "잘 자"]
 
 const POSE_ALT: Record<DogPose, string> = {
   front: "웃고 있는 뽀식이",
@@ -17,6 +17,12 @@ const POSE_ALT: Record<DogPose, string> = {
   bow: "놀자고 엉덩이를 든 뽀식이",
   paw: "손을 내미는 뽀식이",
   eat: "밥 먹는 뽀식이",
+  bang: "빵! 죽은 척하는 뽀식이",
+  shy: "앞발로 얼굴 가린 뽀식이",
+  highfive: "하이파이브 하는 뽀식이",
+  beg: "두 발로 서서 애교 부리는 뽀식이",
+  belly: "배 보이고 뒹구는 뽀식이",
+  yawn: "하품하는 뽀식이",
 }
 
 type KakaoSkillRequest = {
