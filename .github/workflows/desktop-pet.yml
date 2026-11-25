@@ -1,0 +1,41 @@
+name: Desktop pet (Windows build)
+
+on:
+  push:
+    paths:
+      - "desktop-pet/**"
+      - ".github/workflows/desktop-pet.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: desktop-pet
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop-pet/package-lock.json
+      - run: npm ci
+      - run: npx electron-builder --win --publish never
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PpoPet-Setup
+          path: desktop-pet/dist/PpoPet-Setup.exe
+      - name: Publish download link
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ppo-pet
+          name: 뽀식이 데스크톱 펫
+          body: |
+            아래 **PpoPet-Setup.exe** 를 눌러 내려받고 실행하세요.
+            "Windows의 PC 보호" 창이 뜨면 **추가 정보 → 실행** 을 누르면 돼요.
+          files: desktop-pet/dist/PpoPet-Setup.exe
+          make_latest: true

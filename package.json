@@ -5,6 +5,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
+    "prebuild": "node scripts/sync-pet-poses.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",

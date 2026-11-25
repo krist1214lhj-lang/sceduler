@@ -34,3 +34,6 @@ pnpm-debug.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# copied from desktop-pet at build time (scripts/sync-pet-poses.mjs)
+/public/ppo/pose/

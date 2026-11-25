@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'" />
+  <title>설정</title>
+  <style>
+    body { margin: 0; padding: 20px; background: #fff8ef; color: #3a2a1a; font: 14px "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif; }
+    h1 { font-size: 18px; margin: 0 0 16px; }
+    .row { margin-bottom: 18px; }
+    .label { font-weight: 700; margin-bottom: 6px; display: block; }
+    .hint { color: #8a7560; font-size: 12px; margin-top: 4px; line-height: 1.5; }
+    input[type=text] { width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid #e3c9a5; border-radius: 10px; font: inherit; background: #fff; }
+    button { padding: 8px 12px; border: 1px solid #e3c9a5; border-radius: 10px; background: #fff; font: inherit; cursor: pointer; }
+    button.primary { background: #f0a85a; border-color: #f0a85a; color: #fff; font-weight: 700; }
+    button:hover { filter: brightness(.97); }
+    .photo { display: flex; gap: 12px; align-items: center; }
+    .photo img { width: 72px; height: 72px; object-fit: contain; background: #f6e6d2; border-radius: 12px; }
+    .buttons { display: flex; flex-direction: column; gap: 6px; }
+    .seg { display: flex; gap: 6px; }
+    .seg button.on { background: #f0a85a; border-color: #f0a85a; color: #fff; }
+    label.check { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <h1>🐶 강아지 설정</h1>
+
+  <div class="row">
+    <span class="label">이름</span>
+    <input id="name" type="text" maxlength="20" placeholder="예: 뽀식이" />
+  </div>
+
+  <div class="row">
+    <span class="label">사진</span>
+    <div class="photo">
+      <img id="preview" alt="" />
+      <div class="buttons">
+        <button class="primary" id="choose">📷 내 강아지 사진 고르기</button>
+        <button id="reset">기본 뽀식이로 돌아가기</button>
+      </div>
+    </div>
+    <div class="hint">
+      보통 사진은 동그란 스티커 모양으로 나와요.<br />
+      배경을 지운 PNG 사진을 고르면 강아지 모양 그대로 돌아다녀요.
+    </div>
+  </div>
+
+  <div class="row">
+    <span class="label">크기</span>
+    <div class="seg" id="size">
+      <button data-size="small">작게</button>
+      <button data-size="medium">보통</button>
+      <button data-size="large">크게</button>
+    </div>
+  </div>
+
+  <div class="row">
+    <label class="check"><input type="checkbox" id="sound" /> 🔊 말풍선을 소리로도 말하기</label>
+    <label class="check" id="autoRow"><input type="checkbox" id="autoStart" /> 🚀 컴퓨터 켜면 자동으로 나오기</label>
+  </div>
+
+  <div class="hint">
+    💡 강아지를 클릭하면 좋아하고, 끌어서 옮기거나 던질 수도 있어요.<br />
+    강아지를 <b>오른쪽 클릭</b>하면 대화 창이 열려요.<br />
+    화면 오른쪽 아래(작업 표시줄)의 강아지 아이콘을 누르면 간식 주기·재우기·종료 메뉴가 있어요.
+  </div>
+
+  <script src="settings.js"></script>
+</body>
+</html>

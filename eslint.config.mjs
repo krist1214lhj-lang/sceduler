@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Desktop pet is a separate Electron app.
+    "desktop-pet/**",
   ]),
 ]);
 

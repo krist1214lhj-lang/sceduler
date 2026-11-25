@@ -1,0 +1,142 @@
+html, body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+  font-family: "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+}
+
+#pet {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: var(--w, 150px);
+  will-change: transform;
+  cursor: grab;
+}
+#pet.dragging { cursor: grabbing; }
+#pet { transition: opacity 1.5s ease; }
+#pet.vanish { opacity: 0; }
+
+#tilt { transform-origin: 50% 100%; transition: transform .25s ease; }
+#body { transform-origin: 50% 100%; }
+#img {
+  display: block;
+  width: 100%;
+  pointer-events: none;
+  filter: drop-shadow(0 4px 6px rgba(0, 0, 0, .25));
+}
+#img.round {
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 50%;
+  border: 4px solid #fff;
+  box-sizing: border-box;
+}
+
+#bubble {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  margin-bottom: 4px;
+  transform: translateX(calc(-50% + var(--shift, 0px)));
+  width: max-content;
+  max-width: 260px;
+  text-align: center;
+  word-break: keep-all;
+  padding: 6px 12px;
+  border-radius: 16px;
+  border: 1.5px solid #f2c992;
+  background: #fff;
+  color: #3a2a1a;
+  font-size: 14px;
+  font-weight: 600;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, .18);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .2s;
+}
+#bubble.show { opacity: 1; }
+
+#zzz { position: absolute; right: 4%; top: 6%; pointer-events: none; display: none; }
+#zzz span { position: absolute; font-size: 20px; opacity: 0; animation: zzz-float 2.4s ease-out infinite; }
+#zzz span:nth-child(2) { animation-delay: .8s; }
+#zzz span:nth-child(3) { animation-delay: 1.6s; }
+#pet.sleeping #zzz { display: block; }
+
+.fx { position: absolute; pointer-events: none; }
+.heart { font-size: 24px; animation: heart-float 1.2s ease-out forwards; }
+.item-bone { font-size: 34px; line-height: 1; }
+.item-ball {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #f4ff8a, #c8e62a 55%, #9bb81a);
+  box-shadow: 0 3px 6px rgba(0, 0, 0, .3);
+}
+
+@keyframes heart-float { from { transform: translate(-50%, 0) scale(.6); opacity: 1 } to { transform: translate(-50%, -110px) scale(1.3); opacity: 0 } }
+@keyframes zzz-float { 0% { transform: translate(0, 0); opacity: 0 } 30% { opacity: 1 } 100% { transform: translate(26px, -50px); opacity: 0 } }
+
+@keyframes dog-breathe { 0%,100% { transform: scale(1) } 50% { transform: scale(1.03) } }
+@keyframes dog-walk { 0%,100% { transform: translateY(0) rotate(-3deg) } 50% { transform: translateY(-7px) rotate(3deg) } }
+@keyframes dog-run { 0%,100% { transform: translateY(0) rotate(-5deg) } 50% { transform: translateY(-14px) rotate(5deg) } }
+@keyframes dog-jump { 0%,100% { transform: translateY(0) scale(1, 1) } 15% { transform: translateY(0) scale(1.08, .9) } 50% { transform: translateY(-90px) scale(.96, 1.05) } 85% { transform: translateY(0) scale(1.06, .92) } }
+@keyframes dog-spin { from { transform: rotate(0) } to { transform: rotate(360deg) } }
+@keyframes dog-wag { 0%,100% { transform: rotate(-8deg) } 50% { transform: rotate(8deg) } }
+@keyframes dog-sit { 0%,100% { transform: scale(1, .9) } 50% { transform: scale(1.01, .92) } }
+@keyframes dog-sleep { 0%,100% { transform: rotate(-16deg) scale(.95, .84) } 50% { transform: rotate(-16deg) scale(.97, .87) } }
+@keyframes dog-happy { 0%,100% { transform: translateY(0) } 30% { transform: translateY(-30px) rotate(-6deg) } 60% { transform: translateY(0) rotate(6deg) } 80% { transform: translateY(-12px) } }
+@keyframes dog-eat { 0%,100% { transform: rotate(0) translateY(0) } 50% { transform: rotate(8deg) translateY(6px) } }
+@keyframes dog-dangle { 0%,100% { transform: rotate(-7deg) } 50% { transform: rotate(7deg) } }
+@keyframes dog-land { 0% { transform: scale(1.15, .8) } 60% { transform: scale(.95, 1.06) } 100% { transform: scale(1, 1) } }
+
+.dog-idle { animation: dog-breathe 2s ease-in-out infinite }
+.dog-walk { animation: dog-walk .45s ease-in-out infinite }
+.dog-run, .dog-fetch { animation: dog-run .26s ease-in-out infinite }
+.dog-jump { animation: dog-jump .7s ease-in-out 2 }
+.dog-spin { animation: dog-spin .8s ease-in-out 2 }
+.dog-wag { animation: dog-wag .3s ease-in-out infinite }
+.dog-sit { animation: dog-sit 2.2s ease-in-out infinite }
+.dog-sleep { animation: dog-sleep 3s ease-in-out infinite }
+.dog-happy { animation: dog-happy .8s ease-in-out 2 }
+.dog-eat { animation: dog-eat .35s ease-in-out infinite }
+.dog-drag { animation: dog-dangle .5s ease-in-out infinite; transform-origin: 50% 0 }
+.dog-land { animation: dog-land .45s ease-out }
+
+/* ---------- real 뽀식이 sprites (frames made from the user's photo) ---------- */
+#pet.sprite #img { display: none; }
+#pet:not(.sprite) #sprite { display: none; }
+#pet.sprite #body { position: relative; height: var(--h, 160px); }
+#sprite {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  max-width: none;
+  pointer-events: none;
+  filter: drop-shadow(0 4px 5px rgba(0, 0, 0, .22));
+}
+@keyframes sprite-bob { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-4px) } }
+@keyframes sprite-breathe { 0%,100% { transform: scale(1, 1) } 50% { transform: scale(1.012, 1.03) } }
+@keyframes sprite-nod { 0%,100% { transform: translateY(0) } 50% { transform: translateY(3px) } }
+@keyframes sprite-paw { 0%,100% { transform: rotate(-2deg) } 50% { transform: rotate(3deg) } }
+#pet.sprite .dog-walk { animation: sprite-bob .26s ease-in-out infinite }
+#pet.sprite .dog-run, #pet.sprite .dog-fetch { animation: sprite-bob .17s ease-in-out infinite }
+#pet.sprite .dog-sit { animation: sprite-breathe 2.4s ease-in-out infinite }
+#pet.sprite .dog-sleep, #pet.sprite .dog-nap { animation: sprite-breathe 3s ease-in-out infinite }
+#pet.sprite .dog-eat { animation: sprite-nod .4s ease-in-out infinite }
+#pet.sprite .dog-bow { animation: sprite-bob .5s ease-in-out infinite }
+#pet.sprite .dog-paw { animation: sprite-paw .5s ease-in-out infinite }
+#pet.sprite.sleeping #zzz { right: 8%; top: 30%; }
+@keyframes sprite-wiggle { 0%,100% { transform: rotate(-3deg) } 50% { transform: rotate(3deg) } }
+@keyframes sprite-bang { 0% { transform: translateY(-10px) } 40% { transform: translateY(0) } 55% { transform: translateY(-6px) } 70%,100% { transform: translateY(0) } }
+@keyframes sprite-beg { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-6px) } }
+#pet.sprite .dog-bang { animation: sprite-bang .6s ease-out 1 }
+#pet.sprite .dog-shy { animation: sprite-wiggle .7s ease-in-out infinite }
+#pet.sprite .dog-highfive { animation: sprite-paw .4s ease-in-out infinite }
+#pet.sprite .dog-beg { animation: sprite-beg .5s ease-in-out infinite }
+#pet.sprite .dog-belly { animation: sprite-wiggle .45s ease-in-out infinite }
+#pet.sprite .dog-yawn { animation: sprite-breathe 1.2s ease-in-out infinite }
