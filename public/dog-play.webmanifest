@@ -1,0 +1,17 @@
+{
+  "id": "/dog-chat/play",
+  "name": "뽀식이 놀이터",
+  "short_name": "뽀식이 놀이터",
+  "description": "강아지가 화면을 뛰어다니며 놀아요.",
+  "lang": "ko",
+  "start_url": "/dog-chat/play",
+  "scope": "/dog-chat",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f8dfc2",
+  "theme_color": "#f8dfc2",
+  "icons": [
+    { "src": "/ppo/play-icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/ppo/play-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}
