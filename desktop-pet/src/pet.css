@@ -18,6 +18,8 @@ html, body {
   cursor: grab;
 }
 #pet.dragging { cursor: grabbing; }
+#pet { transition: opacity 1.5s ease; }
+#pet.vanish { opacity: 0; }
 
 #tilt { transform-origin: 50% 100%; transition: transform .25s ease; }
 #body { transform-origin: 50% 100%; }

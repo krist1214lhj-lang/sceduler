@@ -16,7 +16,7 @@ if (!SMOKE_DIR && !app.requestSingleInstanceLock()) {
 app.setAppUserModelId("com.ppo.desktoppet")
 
 const ASSETS = path.join(__dirname, "assets")
-const DEFAULTS = { name: "", ownerName: "", photo: null, size: "medium", sound: false, displayId: null, hidden: false, welcomed: false }
+const DEFAULTS = { name: "", ownerName: "", photo: null, size: "medium", sound: false, displayId: null, hidden: false, asleep: false, welcomed: false }
 
 let settings = { ...DEFAULTS }
 let petWin = null
@@ -151,12 +151,19 @@ function createPetWindow() {
   }, 4000)
 }
 
+function showPet() {
+  if (!petWin || petWin.isDestroyed()) return
+  const wasAsleep = settings.asleep
+  if (!petWin.isVisible()) petWin.showInactive()
+  if (settings.hidden || settings.asleep) update({ hidden: false, asleep: false })
+  if (wasAsleep) petWin.webContents.send("command", { type: "wake" })
+}
+
 function sendCommand(type, extra = {}) {
   if (!petWin || petWin.isDestroyed()) return
-  if (!petWin.isVisible()) {
-    petWin.showInactive()
-    update({ hidden: false })
-  }
+  if (type === "sleep" && !petWin.isVisible()) return
+  if (type !== "sleep") showPet()
+  if (type === "wake") return
   petWin.webContents.send("command", { type, ...extra })
 }
 
@@ -186,10 +193,6 @@ function openSettings() {
 
 // ---------- chat window ----------
 function openChat() {
-  if (petWin && !petWin.isDestroyed() && !petWin.isVisible()) {
-    petWin.showInactive()
-    update({ hidden: false })
-  }
   if (chatWin && !chatWin.isDestroyed()) {
     chatWin.show()
     chatWin.focus()
@@ -259,11 +262,12 @@ function buildTrayMenu() {
     ["large", "크게"],
   ]
   const template = [
+    ...(settings.asleep ? [{ label: `☀️ ${name} 깨우기`, click: () => sendCommand("wake") }] : []),
     { label: `💬 ${name}랑 대화하기`, click: openChat },
     { label: `🐶 ${name} 부르기`, click: () => sendCommand("come") },
     { label: "🦴 간식 주기", click: () => sendCommand("treat") },
     { label: "🎾 공 던져 주기", click: () => sendCommand("ball") },
-    { label: "💤 재우기", click: () => sendCommand("sleep") },
+    ...(settings.asleep ? [] : [{ label: "💤 재우기 (자고 나면 사라져요)", click: () => sendCommand("sleep") }]),
     { type: "separator" },
     {
       label: "🔊 소리 (말하기)",
@@ -305,9 +309,10 @@ function buildTrayMenu() {
       label: visible ? `🙈 ${name} 잠깐 숨기기` : `👀 ${name} 다시 보이기`,
       click: () => {
         if (!petWin || petWin.isDestroyed()) return
-        if (petWin.isVisible()) petWin.hide()
-        else petWin.showInactive()
-        update({ hidden: !petWin.isVisible() })
+        if (petWin.isVisible()) {
+          petWin.hide()
+          update({ hidden: true })
+        } else showPet()
       },
     },
     { type: "separator" },
@@ -350,13 +355,16 @@ ipcMain.handle("update-settings", (_e, patch) => {
 })
 ipcMain.handle("choose-photo", () => choosePhoto())
 ipcMain.handle("reset-photo", () => resetPhoto())
-ipcMain.on("pet-command", (_e, type) => (type === "chat" ? openChat() : sendCommand(type)))
+ipcMain.on("pet-command", (_e, type) => {
+  if (type === "chat") openChat()
+  else if (type === "hide-sleep") {
+    if (petWin && !petWin.isDestroyed()) petWin.hide()
+    update({ hidden: true, asleep: true })
+  } else sendCommand(type)
+})
 ipcMain.on("chat-send", (_e, text) => {
   if (!petWin || petWin.isDestroyed()) return
-  if (!petWin.isVisible()) {
-    petWin.showInactive()
-    update({ hidden: false })
-  }
+  showPet()
   petWin.webContents.send("chat", String(text).slice(0, 200))
 })
 ipcMain.on("chat-reply", (_e, text) => {
@@ -390,6 +398,17 @@ async function runSmokeTest() {
     const state = await js("window.__petState && window.__petState()")
     fs.appendFileSync(path.join(SMOKE_DIR, "log.txt"), `${label}: ${JSON.stringify(state)}\n`)
   }
+  // Sleep mode: the dog dozes, fades and the window hides; waking brings it back.
+  const note = (t) => fs.appendFileSync(path.join(SMOKE_DIR, "log.txt"), t + "\n")
+  await js("doAction('idle')")
+  sendCommand("sleep")
+  await wait(1500)
+  note(`sleep+1.5s: visible=${petWin.isVisible()} ${JSON.stringify(await js("window.__petState()"))}`)
+  await wait(4500)
+  note(`sleep+6s: visible=${petWin.isVisible()} asleep=${settings.asleep}`)
+  sendCommand("wake")
+  await wait(800)
+  note(`wake: visible=${petWin.isVisible()} asleep=${settings.asleep} ${JSON.stringify(await js("window.__petState()"))}`)
   app.quit()
 }
 

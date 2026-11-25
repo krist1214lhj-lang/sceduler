@@ -186,7 +186,31 @@ function setAnim(name) {
   petEl.classList.toggle("sleeping", name === "sleep")
 }
 
+let bedTimer = null
+function cancelBed() {
+  clearTimeout(bedTimer)
+  bedTimer = null
+  petEl.classList.remove("vanish")
+}
+
+// Sleep mode: doze off for a moment, fade away, then the window hides until the dog is woken.
+function goToBed(line) {
+  removeItem()
+  doAction("sleep", { line, duration: 1e9 })
+  bedTimer = setTimeout(() => {
+    petEl.classList.add("vanish")
+    bedTimer = setTimeout(() => window.pet.command("hide-sleep"), 1600)
+  }, 3500)
+}
+
+function wakeUp() {
+  cancelBed()
+  if (S.action === "fall" || S.drag) return
+  doAction("bow", { line: pick(["잘 잤다~ 기지개 쭈욱!", "으응… 주인님 안녕!", "푹 잤어요! 놀아요!"]) })
+}
+
 function doAction(a, opts = {}) {
+  if (a !== "sleep") cancelBed()
   S.action = a
   setAnim(a)
   S.targetX = opts.targetX ?? null
@@ -405,10 +429,9 @@ window.pet.onCommand(async ({ type }) => {
   if (S.drag) return
   if (type === "treat") dropItem("bone")
   else if (type === "ball") dropItem("ball")
-  else if (type === "sleep") {
-    removeItem()
-    doAction("sleep", { line: lineFor("sleep"), duration: 30000 })
-  } else if (type === "come") {
+  else if (type === "sleep") goToBed(lineFor("sleep"))
+  else if (type === "wake") wakeUp()
+  else if (type === "come") {
     await comeToCursor(lineFor("come"))
   }
 })
@@ -446,8 +469,7 @@ async function handleChat(text) {
     case "walk":
       return doAction("walk", { targetX: randomWalkX(), line: r.text })
     case "sleep":
-      removeItem()
-      return doAction("sleep", { line: r.text, duration: 30000 })
+      return goToBed(r.text)
     default:
       if (S.action === "sleep" && r.action !== "sleep") burstHearts()
       return doAction(r.action || "wag", { line: r.text })
