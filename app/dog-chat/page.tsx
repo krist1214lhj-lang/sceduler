@@ -1,9 +1,21 @@
 "use client"
 
+import Link from "next/link"
 import { useEffect, useRef, useState, useSyncExternalStore } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import {
+  canSpeak,
+  noopSubscribe,
+  readName,
+  saveName,
+  setSpeechListeners,
+  speak,
+  stopSpeech,
+  subscribeName,
+  unlockSpeech,
+} from "@/lib/dog-speech"
 import { cn } from "@/lib/utils"
 
 const EMOTION_EMOJI: Record<string, string> = {
@@ -54,73 +66,6 @@ function getRecognitionCtor(): (new () => Recognition) | null {
   return (w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null) as (new () => Recognition) | null
 }
 
-const NAME_KEY = "dogName"
-let memoryName = ""
-const nameListeners = new Set<() => void>()
-
-function subscribeName(listener: () => void) {
-  nameListeners.add(listener)
-  return () => nameListeners.delete(listener)
-}
-
-function readName() {
-  try {
-    return localStorage.getItem(NAME_KEY) ?? memoryName
-  } catch {
-    return memoryName
-  }
-}
-
-function saveName(name: string) {
-  memoryName = name
-  try {
-    localStorage.setItem(NAME_KEY, name)
-  } catch {}
-  nameListeners.forEach((l) => l())
-}
-
-const noopSubscribe = () => () => {}
-
-function canSpeak() {
-  return typeof window !== "undefined" && "speechSynthesis" in window
-}
-
-const EMOJI = new RegExp("[\\p{Extended_Pictographic}\\u200d\\ufe0f]", "gu")
-
-let speechErrorListener: ((code: string) => void) | null = null
-let speechStateListener: ((speaking: boolean) => void) | null = null
-// Safari can garbage-collect an utterance mid-speech, so keep the current one alive.
-let currentUtterance: SpeechSynthesisUtterance | null = null
-
-function speak(text: string, pitch: number, rate: number) {
-  if (!canSpeak()) return
-  const clean = text.replace(EMOJI, "").replace(/~/g, "").trim()
-  if (!clean) return
-  const synth = window.speechSynthesis
-  const utterance = new SpeechSynthesisUtterance(clean)
-  // No explicit voice: iOS can list voices that aren't installed, and picking one plays silence.
-  utterance.lang = "ko-KR"
-  utterance.pitch = pitch
-  utterance.rate = rate
-  utterance.onstart = () => speechStateListener?.(true)
-  utterance.onend = () => {
-    if (currentUtterance === utterance) currentUtterance = null
-    speechStateListener?.(false)
-  }
-  utterance.onerror = (e) => {
-    speechStateListener?.(false)
-    if (e.error !== "canceled" && e.error !== "interrupted") speechErrorListener?.(e.error)
-  }
-  currentUtterance = utterance
-  // Safari drops a speak() issued right after cancel(), so only cancel when needed and wait a beat.
-  if (synth.speaking || synth.pending) {
-    synth.cancel()
-    setTimeout(() => synth.speak(utterance), 120)
-  } else {
-    synth.speak(utterance)
-  }
-}
-
 function speakAsDog(text: string) {
   speak(text, 1.5, 1.05)
 }
@@ -138,15 +83,6 @@ const CALLS: { icon: string; label: string; line: (name: string) => string }[] =
   { icon: "👍", label: "잘했어", line: (n) => `${n}, 잘했어! 착하다!` },
   { icon: "🌙", label: "잘 자", line: (n) => `${n}, 잘 자` },
 ]
-
-// iOS only lets speech start inside a tap, so prime it with a silent utterance on each tap.
-function unlockSpeech() {
-  if (canSpeak()) window.speechSynthesis.speak(new SpeechSynthesisUtterance(""))
-}
-
-function stopSpeech() {
-  if (canSpeak()) window.speechSynthesis.cancel()
-}
 
 function drawToJpeg(canvas: HTMLCanvasElement, source: CanvasImageSource, width: number, height: number) {
   const scale = Math.min(1, 640 / Math.max(width, height))
@@ -253,20 +189,21 @@ export default function DogChatPage() {
   }, [])
 
   useEffect(() => {
-    speechErrorListener = (code) => setSoundError(code)
-    speechStateListener = (speaking) => {
-      speakingRef.current = speaking
-      // Pause the mic while the dog talks so it doesn't transcribe its own voice.
-      if (speaking) actionsRef.current.pauseListening()
-      else actionsRef.current.resumeListening()
-    }
+    setSpeechListeners({
+      onError: (code) => setSoundError(code),
+      onState: (speaking) => {
+        speakingRef.current = speaking
+        // Pause the mic while the dog talks so it doesn't transcribe its own voice.
+        if (speaking) actionsRef.current.pauseListening()
+        else actionsRef.current.resumeListening()
+      },
+    })
     const onVisible = () => {
       if (document.visibilityState === "visible" && modeRef.current === "live") requestWakeLock()
     }
     document.addEventListener("visibilitychange", onVisible)
     return () => {
-      speechErrorListener = null
-      speechStateListener = null
+      setSpeechListeners(null)
       document.removeEventListener("visibilitychange", onVisible)
       recognitionRef.current?.abort()
       wakeLockRef.current?.release().catch(() => {})
@@ -690,13 +627,9 @@ export default function DogChatPage() {
               {EMOTION_EMOJI[emotion.label] ?? "🐾"}
               <span className="font-semibold">{EMOTION_KR[emotion.label] ?? emotion.label}</span>
             </Badge>
-            <p
-              className={cn(
-                "rounded-xl bg-white/90 px-3 py-2 text-xs leading-relaxed text-foreground shadow-md",
-                active && "line-clamp-3",
-              )}
-            >
-              {emotion.reason}
+            <p className="rounded-xl bg-white/90 px-3 py-2 text-xs leading-relaxed text-foreground shadow-md">
+              {/* Clamp an inner span: clamping the padded box lets the next line peek into the padding. */}
+              <span className={cn(active && "line-clamp-2")}>{emotion.reason}</span>
             </p>
           </div>
         )}
@@ -770,6 +703,12 @@ export default function DogChatPage() {
           <p className="text-xs text-muted-foreground">
             시작하면 카메라와 마이크가 켜진 채로 15초마다 표정을 읽고, 말을 걸면 바로 대답해요.
           </p>
+          <Link
+            href="/dog-chat/play"
+            className="rounded-xl border p-3 text-sm font-medium hover:bg-muted transition-colors"
+          >
+            🖥️ {callName} 놀이터 <span className="text-muted-foreground font-normal">· 컴퓨터 화면에서 뛰어노는 모습 보기</span>
+          </Link>
           {!isInstalled && (isIOS || isAndroid) && (
             <p className="rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 p-3 text-xs leading-relaxed">
               📲 <b>앱처럼 쓰기</b>:{" "}
