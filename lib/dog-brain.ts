@@ -1,7 +1,9 @@
 // 뽀식이의 대화 두뇌 - free, rule based, no AI service. Used by the KakaoTalk channel bot.
 // (The desktop pet has the same rules in desktop-pet/src/brain.js.)
 
-export type DogPose = "front" | "walk" | "run" | "sit" | "sleep" | "jump" | "bow" | "paw" | "eat"
+export type DogPose =
+  | "front" | "walk" | "run" | "sit" | "sleep" | "jump" | "bow" | "paw" | "eat"
+  | "bang" | "shy" | "highfive" | "beg" | "belly" | "yawn"
 export type DogReply = { text: string; pose: DogPose }
 export type DogContext = { name: string; ownerName?: string }
 
@@ -33,6 +35,12 @@ const RULES: Rule[] = [
   { test: /(무슨\s*종|품종|견종)/, reply: () => ({ text: "살구색 토이푸들이에요! 곱슬곱슬 털 예쁘죠?", pose: "front" }) },
 
   { test: /앉아|앉자/, reply: () => ({ text: pick(["앉았어요! 착하죠?", "얌전히 앉았어요~ 간식 주실 거죠?"]), pose: "sit" }) },
+  { test: /(빵|bang)/i, reply: () => ({ text: pick(["으악! 당했다… 꼴깍", "빵! …(죽은 척 중이에요)"]), pose: "bang" }) },
+  { test: /(얼굴|부끄|가려|숨어)/, reply: () => ({ text: pick(["부끄부끄~ (얼굴 가림)", "아잉 몰라요~"]), pose: "shy" }) },
+  { test: /(하이\s*파이브|하이5|짝)/, reply: () => ({ text: pick(["하이파이브! 짝!", "손바닥 짝! 왈!"]), pose: "highfive" }) },
+  { test: /(애교|주세요|부탁|두\s*발|서\s*봐)/, reply: () => ({ text: pick(["주세요~ 주세요~ (두 발로 서기)", "애교 발사! 헤헤"]), pose: "beg" }) },
+  { test: /(뒹굴|구르|배\s*(보여|만져|쓰담|긁)|배꼽)/, reply: () => ({ text: pick(["배 쓰담쓰담 해주세요~", "뒹굴뒹굴~ 기분 좋다!"]), pose: "belly" }) },
+  { test: /(하품|아함|하아암)/, reply: () => ({ text: "하아암~ 저도 하품 나와요…", pose: "yawn" }) },
   { test: /^손|손\s*(줘|!)|악수/, reply: () => ({ text: pick(["손! 여기요~", "자, 손! 멍!"]), pose: "paw" }) },
   { test: /(엎드려|누워|코\s*자|낮잠|자자|자러|잘\s*자|굿\s*나잇|졸려)/, reply: () => ({ text: pick(["네에… 새근새근… zzz", "잘 자요~ 저도 잘게요… zzz"]), pose: "sleep" }) },
   { test: /(점프|뛰어)/, reply: () => ({ text: pick(["점프! 왈왈!", "높이 뛰었죠?!"]), pose: "jump" }) },
