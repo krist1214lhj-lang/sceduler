@@ -32,7 +32,7 @@ const POSE = {
   walk: "walk", run: "run", fetch: "run", spin: "run", chase: "run", nap: "sleep", sit: "sit", sleep: "sleep", jump: "jump",
   bow: "bow", paw: "paw", eat: "eat",
   // tricks made from existing pictures
-  shake: "front", sniff: "walk", hop: "jump", roll: "belly", doze: "sit", stand: "stand",
+  shake: "front", sniff: "walk", hop: "jump", roll: "belly", doze: "sit", stand: "stand", howl: "front", think: "sit",
 }
 // Actions that move the dog across the floor, and how fast (px per second).
 const SPEED = { walk: 75, sniff: 40, hop: 170, roll: 150 }
@@ -128,6 +128,17 @@ const LINES = {
   wave: () => ["안녕~! 안녕~!", "주인님 안녕~!", "반가워요~!"],
   doze: () => ["꾸벅… 꾸벅…", "졸려… 꾸벅…", "음냐음냐…"],
   squat: () => ["운동 시작! 하나!", "튼튼해질 거예요! 하나!", "체조 시간! 하나!"],
+  yay: () => ["야호!! 신난다!!", "최고다~!!", "기분 최고!!"],
+  think: () => ["음… 간식 생각 중…", "음… 뭐 하고 놀까?", "흠… 주인님 생각 중…"],
+  kiss: () => ["쪽! 뽀뽀~ 💕", "쪽쪽! 사랑해요~", "뽀뽀 발사! 쪽!"],
+  surprise: () => ["왈?! 깜짝이야!", "헉! 뭐야 뭐야?!", "깜짝 놀랐잖아요!"],
+  stay: () => ["기다려… 꾹 참는 중…", "참을 수 있어… 기다려…"],
+  howl: () => ["아우우우~~ 🎶", "아우~ 뽀식이 노래 들어볼래요?", "랄라~ 아우우~"],
+  gift: () => ["선물이다?! 두근두근!", "뭐가 들었을까?!"],
+  bubbles: () => ["비눗방울이다! 잡을 거야!", "몽글몽글~ 잡아라!"],
+  photo: () => ["찰칵! 예쁘게 나왔어요?", "브이~! 찰칵!"],
+  bath: () => ["목욕…? 거품 보글보글~", "보글보글~ 목욕 시간!"],
+  birthday: () => ["생일 축하해요! 🎉", "축하 축하~! 🎂"],
   rub: () => ["헤헤 간지러워~ 더 해줘!", "아~ 거기 거기!", "쓰담쓰담 최고예요!"],
   hungry: () => ["배고파요… 간식 주세요~", "꼬르륵… 간식 시간 아니에요?", "간식… 간식…!"],
   welcome: () => ["주인님 왔다!!", "기다렸어요! 왈왈!", "어디 갔다 왔어요~ 보고 싶었어요!"],
@@ -160,6 +171,13 @@ const RANDOM_ACTIONS = [
   ["wave", 2],
   ["doze", 2],
   ["squat", 1],
+  ["yay", 2],
+  ["think", 2],
+  ["kiss", 1],
+  ["surprise", 1],
+  ["howl", 1],
+  ["bubbles", 2],
+  ["photo", 1],
   ["follow", 3],
   ["sleep", 3],
 ]
@@ -182,6 +200,8 @@ const DURATIONS = {
   belly: [3500, 5000],
   yawn: [2200, 2600],
   shake: [1600, 1600],
+  howl: [2600, 2600],
+  think: [3200, 3200],
   chase: [2400, 2400],
   nap: [1e9, 1e9],
   paw: [2200, 2800],
@@ -483,6 +503,28 @@ function startSquat(line) {
   ])
 }
 
+// Soap bubbles drifting up around the dog.
+function spawnBubbles(n) {
+  for (let i = 0; i < n; i++) {
+    const el = document.createElement("span")
+    el.className = "fx bubble"
+    el.textContent = "🫧"
+    el.style.left = `${S.x + S.w / 2 + (Math.random() - 0.5) * S.w * 2.5}px`
+    el.style.top = `${S.y + S.h * (0.3 + Math.random() * 0.6)}px`
+    el.style.animationDelay = `${i * 180}ms`
+    fxEl.appendChild(el)
+    setTimeout(() => el.remove(), 4200)
+  }
+}
+
+// Camera flash for "사진 찍자".
+function flash() {
+  const el = document.createElement("div")
+  el.className = "fx flash"
+  fxEl.appendChild(el)
+  setTimeout(() => el.remove(), 700)
+}
+
 const SPECIAL = {
   zoomies: startZoomies,
   chase: startChase,
@@ -495,6 +537,69 @@ const SPECIAL = {
   wave: startWave,
   doze: startDoze,
   squat: startSquat,
+  yay: (line) => {
+    spawnFx(["✨", "⭐", "🌟"], 7)
+    runScript([{ a: "jump", d: 1400, line: line || lineFor("yay") }, { a: "happy", d: 1600 }])
+  },
+  think: (line) => {
+    spawnFx(["💭"], 1)
+    doAction("think", { line: line || lineFor("think") })
+  },
+  kiss: (line) => {
+    burstHearts()
+    spawnFx(["💋", "💕"], 5)
+    doAction("happy", { line: line || lineFor("kiss") })
+  },
+  surprise: (line) => {
+    spawnFx(["❗", "❓", "‼️"], 4)
+    doAction("jump", { line: line || lineFor("surprise") })
+  },
+  stay: (line) =>
+    runScript([
+      { a: "sit", d: 3500, line: line || lineFor("stay") },
+      { a: "sit", d: 2200, line: "이제… 먹어도 돼요?" },
+      { a: "jump", d: 1400, line: "앗싸! 참았다!" },
+    ]),
+  howl: (line) => {
+    spawnFx(["🎵", "🎶"], 6)
+    doAction("howl", { line: line || lineFor("howl") })
+  },
+  gift: () => dropItem("gift"),
+  bubbles: (line) => {
+    spawnBubbles(10)
+    runScript([
+      { a: "jump", d: 1400, line: line || lineFor("bubbles") },
+      { a: "hop", x: randomWalkX() },
+      { a: "jump", d: 1400, line: "톡! 터뜨렸다!" },
+    ])
+  },
+  photo: (line) => {
+    flash()
+    runScript([
+      { a: "highfive", d: 1800, line: line || lineFor("photo") },
+      { a: "shy", d: 1800, line: "부끄부끄~ 잘 나왔죠?" },
+    ])
+  },
+  bath: (line) => {
+    spawnBubbles(8)
+    runScript([
+      { a: "sit", d: 2200, line: line || lineFor("bath") },
+      { a: "shake", d: 1600, line: "부르르르~!" },
+      { a: "jump", d: 1400, line: "깨끗해졌다! 뽀송뽀송!" },
+    ])
+    setTimeout(() => S.action === "shake" && spawnFx(["💦", "💧"], 7), 2300)
+  },
+  birthday: (line) => {
+    spawnFx(["🎂", "🎉", "🎈", "🎊"], 8)
+    setTimeout(() => S.action !== "fall" && spawnFx(["🎉", "🎈"], 6), 1500)
+    runScript([
+      { a: "highfive", d: 600, line: line || lineFor("birthday") },
+      { a: "beg", d: 600 },
+      { a: "highfive", d: 600 },
+      { a: "jump", d: 1400 },
+      { a: "bow", d: 1600, line: "오늘 최고로 행복하세요! 💕" },
+    ])
+  },
 }
 
 function pickNext() {
@@ -535,7 +640,11 @@ function arrive() {
       S.lastFed = Date.now()
       doAction("eat", { line: "냠냠! 맛있다!" })
     }
-    else doAction("happy", { line: "잡았다! 또 던져줘!" })
+    else if (item.kind === "gift") {
+      burstHearts()
+      spawnFx(["✨", "🎉"], 6)
+      doAction("happy", { line: pick(["선물이다! 고마워요!", "우와~ 최고의 선물!"]) })
+    } else doAction("happy", { line: "잡았다! 또 던져줘!" })
     return
   }
   if (S.script && nextStep()) return
@@ -561,13 +670,14 @@ function dropItem(kind) {
   const el = document.createElement("div")
   el.className = `fx item-${kind}`
   if (kind === "bone") el.textContent = "🦴"
+  if (kind === "gift") el.textContent = "🎁"
   fxEl.appendChild(el)
-  const size = kind === "bone" ? 34 : 30
+  const size = kind === "ball" ? 30 : 34
   const margin = 40
   let x = clamp(S.x + S.w / 2 + (Math.random() < 0.5 ? -1 : 1) * (250 + Math.random() * 400), margin, S.W - margin)
   S.item = { kind, el, size, x, y: -size, vx: 0, vy: 0, kicks: 0 }
   if (S.action === "sleep") say(lineFor("wake"))
-  doAction("fetch", { line: kind === "ball" ? "공이다! 잡으러 간다!" : "간식이다!!" })
+  doAction("fetch", { line: kind === "ball" ? "공이다! 잡으러 간다!" : kind === "gift" ? lineFor("gift") : "간식이다!!" })
 }
 
 function removeItem() {
