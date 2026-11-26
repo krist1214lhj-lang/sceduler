@@ -10,7 +10,7 @@ const spriteEl = document.getElementById("sprite")
 // Frames of the real 뽀식이, made from the user's photo (assets/ppo/*.png). All share one scale.
 const SPRITES = {
   front: ["front"],
-  // 8 frames of one natural step cycle: legs swing front/back from one picture (desktop-pet/README.md)
+  // 8 frames of a real walk cycle (reach, land, pass, lift ×2) drawn by AI from 뽀식이 and aligned on the head
   walk: ["walk0", "walk1", "walk2", "walk3", "walk4", "walk5", "walk6", "walk7"],
   run: ["run0", "run1", "run2", "run3"],
   sit: ["sit"],
@@ -30,7 +30,7 @@ const TRICKS = ["bang", "shy", "highfive", "beg", "belly", "yawn"]
 const POSE = { walk: "walk", run: "run", fetch: "run", spin: "run", chase: "run", nap: "sleep", sit: "sit", sleep: "sleep", jump: "jump", bow: "bow", paw: "paw", eat: "eat" }
 for (const t of TRICKS) POSE[t] = t
 const FRAME_MS = { walk: 130, run: 85 }
-const WALK_STEP = 0.075 // fraction of the dog's width walked per frame (8 frames = one stride cycle)
+const WALK_STEP = 0.1 // fraction of the dog's width walked per frame (4 frames = one step: reach, land, pass, lift)
 const BASE_W = 222 // natural width of a walking frame = the dog's box width
 const BASE_H = 244
 const spriteSize = {}
@@ -74,8 +74,8 @@ function drawSprite(now) {
   else if (S.x + S.w + extra > S.W) shift = S.W - (S.x + S.w + extra)
   // The side-view frames face right; the front photo has the name tag text, so it never mirrors.
   const flip = pose === "front" ? 1 : S.facing
-  // Each step lifts the body a touch (two steps per cycle).
-  const bob = pose === "walk" ? -Math.abs(Math.sin((S.walkDist / (S.w * WALK_STEP * frames.length)) * Math.PI * 2)) * S.w * 0.015 : 0
+  // The walking pictures already bounce the body with each step, so no extra bob.
+  const bob = 0
   el.style.transform = `translate(calc(-50% + ${shift}px), ${bob}px) scaleX(${flip})`
 }
 
