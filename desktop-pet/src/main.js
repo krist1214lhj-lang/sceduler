@@ -442,6 +442,7 @@ async function runSmokeTest() {
     fs.writeFileSync(path.join(SMOKE_DIR, `${label}.png`), img.toPNG())
     const state = await js("window.__petState && window.__petState()")
     fs.appendFileSync(path.join(SMOKE_DIR, "log.txt"), `${label}: ${JSON.stringify(state)}\n`)
+    if (state && !state.pic) fs.appendFileSync(path.join(SMOKE_DIR, "log.txt"), `!!! ${label}: the dog is not visible\n`)
   }
   // Sleep mode: the dog dozes, fades and the window hides; waking brings it back.
   const note = (t) => fs.appendFileSync(path.join(SMOKE_DIR, "log.txt"), t + "\n")
