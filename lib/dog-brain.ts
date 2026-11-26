@@ -1,24 +1,11 @@
 // 뽀식이의 대화 for the KakaoTalk channel bot.
 // The rules live in ONE place, desktop-pet/src/brain.js, shared with the desktop pet:
 // change the brain there and both the desktop pet and the Kakao bot answer the new way.
-import { reply } from "../desktop-pet/src/brain.js"
+import { PICTURE_FOR_ACTION, reply, SUGGESTIONS } from "../desktop-pet/src/brain.js"
 import poses from "./pet-poses.json"
 
 export type DogContext = { name: string; ownerName?: string }
 export type DogReply = { text: string; image: string; alt: string }
-
-// Desktop actions that have no picture of their own borrow one that looks like them.
-const PICTURE_FOR_ACTION: Record<string, string> = {
-  wag: "front",
-  happy: "jump",
-  treat: "eat",
-  ball: "run",
-  come: "run",
-  fetch: "run",
-  spin: "run",
-  chase: "run",
-  nap: "sleep",
-}
 
 const ALT: Record<string, string> = {
   front: "웃고 있는 뽀식이",
@@ -49,6 +36,9 @@ function pictureFor(action: string | undefined, name: string) {
   if (poses.sprites.includes(pose)) return { image: `/ppo/pose/${pose}.png`, alt }
   return { image: "/ppo/kakao/front.jpg", alt: ALT.front }
 }
+
+// The buttons under each Kakao answer: the first 10 of the desktop chat's buttons (Kakao allows 10).
+export const QUICK_REPLIES = SUGGESTIONS.slice(0, 10)
 
 export function dogReply(raw: string, ctx: DogContext): DogReply {
   const r = reply(raw, ctx)

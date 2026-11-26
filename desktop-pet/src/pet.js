@@ -25,9 +25,18 @@ const SPRITES = {
   beg: ["beg"],
   belly: ["belly"],
   yawn: ["yawn"],
+  stand: ["walk2"],
 }
 const TRICKS = ["bang", "shy", "highfive", "beg", "belly", "yawn"]
-const POSE = { walk: "walk", run: "run", fetch: "run", spin: "run", chase: "run", nap: "sleep", sit: "sit", sleep: "sleep", jump: "jump", bow: "bow", paw: "paw", eat: "eat" }
+const POSE = {
+  walk: "walk", run: "run", fetch: "run", spin: "run", chase: "run", nap: "sleep", sit: "sit", sleep: "sleep", jump: "jump",
+  bow: "bow", paw: "paw", eat: "eat",
+  // tricks made from existing pictures
+  shake: "front", sniff: "walk", hop: "jump", roll: "belly", doze: "sit", stand: "stand",
+}
+// Actions that move the dog across the floor, and how fast (px per second).
+const SPEED = { walk: 75, sniff: 40, hop: 170, roll: 150 }
+const MOVING = new Set(["walk", "run", "fetch", "sniff", "hop", "roll"])
 for (const t of TRICKS) POSE[t] = t
 const FRAME_MS = { walk: 130, run: 85 }
 const WALK_STEP = 0.1 // fraction of the dog's width walked per frame (4 frames = one step: reach, land, pass, lift)
@@ -74,6 +83,8 @@ function drawSprite(now) {
   else if (S.x + S.w + extra > S.W) shift = S.W - (S.x + S.w + extra)
   // The side-view frames face right; the front photo has the name tag text, so it never mirrors.
   const flip = pose === "front" ? 1 : S.facing
+  // Rolling turns the way the dog is going.
+  bodyEl.style.animationDirection = S.action === "roll" && S.facing < 0 ? "reverse" : ""
   // The walking pictures already bounce the body with each step, so no extra bob.
   const bob = 0
   el.style.transform = `translate(calc(-50% + ${shift}px), ${bob}px) scaleX(${flip})`
@@ -109,6 +120,14 @@ const LINES = {
   chase: () => ["꼬리 잡을 거야!", "내 꼬리 어디 갔지?", "거기 서! 꼬리야!"],
   peek: () => ["빼꼼!", "나 찾아봐라~", "여기 있지롱!"],
   follow: () => ["주인님 어디 가요~", "같이 가요!", "어? 주인님 손이다!"],
+  shake: () => ["부르르르~!", "몸 털기! 털털털~", "시원하다~!"],
+  sniff: () => ["킁킁… 무슨 냄새지?", "킁킁킁… 간식 냄새?", "여기 뭐가 있나?"],
+  hop: () => ["깡충깡충~", "토끼처럼 깡충!", "신난다 깡충!"],
+  roll: () => ["데굴데굴~", "굴러간다~!", "데굴데굴 데굴~"],
+  dance: () => ["♪ 뽀식이 댄스 타임! ♪", "♪ 둠칫둠칫 ♪", "♪ 신나는 춤! ♪"],
+  wave: () => ["안녕~! 안녕~!", "주인님 안녕~!", "반가워요~!"],
+  doze: () => ["꾸벅… 꾸벅…", "졸려… 꾸벅…", "음냐음냐…"],
+  squat: () => ["운동 시작! 하나!", "튼튼해질 거예요! 하나!", "체조 시간! 하나!"],
   rub: () => ["헤헤 간지러워~ 더 해줘!", "아~ 거기 거기!", "쓰담쓰담 최고예요!"],
   hungry: () => ["배고파요… 간식 주세요~", "꼬르륵… 간식 시간 아니에요?", "간식… 간식…!"],
   welcome: () => ["주인님 왔다!!", "기다렸어요! 왈왈!", "어디 갔다 왔어요~ 보고 싶었어요!"],
@@ -133,6 +152,14 @@ const RANDOM_ACTIONS = [
   ["zoomies", 3],
   ["chase", 3],
   ["peek", 2],
+  ["shake", 2],
+  ["sniff", 3],
+  ["hop", 2],
+  ["roll", 2],
+  ["dance", 2],
+  ["wave", 2],
+  ["doze", 2],
+  ["squat", 1],
   ["follow", 3],
   ["sleep", 3],
 ]
@@ -154,6 +181,7 @@ const DURATIONS = {
   beg: [2600, 3400],
   belly: [3500, 5000],
   yawn: [2200, 2600],
+  shake: [1600, 1600],
   chase: [2400, 2400],
   nap: [1e9, 1e9],
   paw: [2200, 2800],
@@ -290,7 +318,7 @@ function doAction(a, opts = {}) {
   if (a !== "sleep") cancelBed()
   if (!opts.keepScript) S.script = null
   if (a !== "nap") S.napping = false
-  S.speed = opts.speed || (a === "walk" ? 75 : 330)
+  S.speed = opts.speed || SPEED[a] || 330
   S.free = Boolean(opts.free)
   if (opts.face) S.facing = opts.face
   S.action = a
@@ -384,7 +412,90 @@ function followCursor(line) {
   return true
 }
 
-const SPECIAL = { zoomies: startZoomies, chase: startChase, peek: startPeek }
+// Little effects floating up from the dog (notes, water drops…).
+function spawnFx(chars, n = 5) {
+  for (let i = 0; i < n; i++) {
+    const el = document.createElement("span")
+    el.className = "fx heart"
+    el.textContent = pick(chars)
+    el.style.left = `${S.x + S.w / 2 + (Math.random() - 0.5) * S.w}px`
+    el.style.top = `${S.y + Math.random() * S.h * 0.4}px`
+    el.style.animationDelay = `${i * 90}ms`
+    fxEl.appendChild(el)
+    setTimeout(() => el.remove(), 1700)
+  }
+}
+
+function startShake(line) {
+  doAction("shake", { line: line || lineFor("shake") })
+  spawnFx(["💦", "💧"], 7)
+}
+
+function startMover(action, after) {
+  return (line) => {
+    removeItem()
+    const steps = [{ a: action, x: randomWalkX(), line: line || lineFor(action) }]
+    if (after) steps.push(after)
+    runScript(steps)
+  }
+}
+
+function startDance(line) {
+  spawnFx(["🎵", "🎶", "♪"], 6)
+  setTimeout(() => S.action !== "fall" && spawnFx(["🎵", "🎶", "♪"], 5), 1200)
+  runScript([
+    { a: "highfive", d: 500, line: line || lineFor("dance") },
+    { a: "beg", d: 500 },
+    { a: "highfive", d: 500 },
+    { a: "beg", d: 500 },
+    { a: "jump", d: 1400 },
+    { a: "bow", d: 1600, line: pick(["짜잔~!", "어때요? 멋있죠?"]) },
+  ])
+}
+
+function startWave(line) {
+  runScript([
+    { a: "paw", d: 600, line: line || lineFor("wave") },
+    { a: "highfive", d: 600 },
+    { a: "paw", d: 600 },
+    { a: "highfive", d: 600 },
+  ])
+}
+
+function startDoze(line) {
+  runScript([
+    { a: "doze", d: 2600, line: line || lineFor("doze") },
+    { a: "yawn", d: 1800, line: "하아암~" },
+    { a: "doze", d: 2000 },
+    { a: "jump", d: 1400, line: pick(["앗! 안 졸았어요!", "깜짝이야! 안 잤어요!"]) },
+  ])
+}
+
+function startSquat(line) {
+  runScript([
+    { a: "sit", d: 700, line: line || lineFor("squat") },
+    { a: "stand", d: 700 },
+    { a: "sit", d: 700, line: "둘!" },
+    { a: "stand", d: 700 },
+    { a: "sit", d: 700, line: "셋!" },
+    { a: "stand", d: 500 },
+    { a: "jump", d: 1400, line: "운동 끝! 튼튼해졌어요!" },
+  ])
+}
+
+const SPECIAL = {
+  zoomies: startZoomies,
+  chase: startChase,
+  peek: startPeek,
+  shake: startShake,
+  sniff: startMover("sniff"),
+  hop: startMover("hop"),
+  roll: startMover("roll", { a: "sit", d: 1600, line: "헤헤 어지러워~" }),
+  dance: startDance,
+  wave: startWave,
+  doze: startDoze,
+  squat: startSquat,
+}
 
 function pickNext() {
   // Hungry dogs beg now and then.
@@ -699,11 +810,8 @@ async function handleChat(text) {
       return doAction("walk", { targetX: randomWalkX(), line: r.text })
     case "sleep":
       return goToBed(r.text)
-    case "zoomies":
-    case "chase":
-    case "peek":
-      return SPECIAL[r.action](r.text)
     default:
+      if (SPECIAL[r.action]) return SPECIAL[r.action](r.text)
       if (S.action === "sleep" && r.action !== "sleep") burstHearts()
       return doAction(r.action || "wag", { line: r.text })
   }
@@ -847,7 +955,7 @@ function loop(now) {
     // Keep the dog standing on the floor (e.g. after the screen size changed).
     S.y = ground()
     if (a === "fetch" && S.item) S.targetX = clamp(S.item.x - S.w / 2, 0, Math.max(0, S.W - S.w))
-    const moving = a === "walk" || a === "run" || a === "fetch"
+    const moving = MOVING.has(a)
     if (moving && S.targetX !== null) {
       const dx = S.targetX - S.x
       const itemMoving = a === "fetch" && S.item && (S.item.vx !== 0 || S.item.y < S.H - S.item.size)
@@ -857,7 +965,7 @@ function loop(now) {
         arrive()
       } else if (Math.abs(dx) > step) {
         S.x += Math.sign(dx) * step
-        if (a === "walk") S.walkDist += step
+        if (POSE[a] === "walk") S.walkDist += step
         S.facing = dx < 0 ? -1 : 1
       }
     } else if (now > S.until) {
@@ -872,7 +980,7 @@ function loop(now) {
     setIgnore(true)
     S.hovering = false
   }
-  const moving = ["walk", "run", "fetch"].includes(S.action)
+  const moving = MOVING.has(S.action)
   tiltEl.style.transform = S.sprite ? "" : moving ? `rotate(${S.facing * 6}deg)` : ""
   if (S.sprite) drawSprite(now)
   petEl.style.transform = `translate(${S.x}px, ${S.y}px)`

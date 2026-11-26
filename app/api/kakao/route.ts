@@ -2,11 +2,9 @@
 // Open Builder POSTs each message here; we answer with 뽀식이's reply and a pose picture.
 // Rule based and instant: no AI service is called, so it costs nothing and fits Kakao's 5-second limit.
 // The words and tricks come from the desktop pet's brain (desktop-pet/src/brain.js), so both stay the same.
-import { dogReply } from "@/lib/dog-brain"
+import { dogReply, QUICK_REPLIES } from "@/lib/dog-brain"
 
 const DOG_NAME = "뽀식이"
-
-const QUICK_REPLIES = ["안녕!", "앉아", "손", "빵!", "얼굴!", "하이파이브", "우다다", "숨바꼭질", "간식 줄까?", "사랑해"]
 
 type KakaoSkillRequest = {
   userRequest?: { utterance?: string }

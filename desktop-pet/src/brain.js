@@ -44,7 +44,15 @@ const RULES = [
   { test: /(얼굴|부끄|가려|숨어)/, reply: () => ({ text: pick(["부끄부끄~ (얼굴 가림)", "아잉 몰라요~"]), action: "shy" }) },
   { test: /(하이\s*파이브|하이5|짝)/, reply: () => ({ text: pick(["하이파이브! 짝!", "손바닥 짝! 왈!"]), action: "highfive" }) },
   { test: /(애교|주세요|부탁|두\s*발|서\s*봐)/, reply: () => ({ text: pick(["주세요~ 주세요~ (두 발로 서기)", "애교 발사! 헤헤"]), action: "beg" }) },
-  { test: /(뒹굴|구르|배\s*(보여|만져|쓰담|긁)|배꼽)/, reply: () => ({ text: pick(["배 쓰담쓰담 해주세요~", "뒹굴뒹굴~ 기분 좋다!"]), action: "belly" }) },
+  { test: /(굴러|데굴|구르기)/, reply: () => ({ text: "데굴데굴~ 굴러간다~!", action: "roll" }) },
+  { test: /(몸\s*털|부르르|털어)/, reply: () => ({ text: "부르르르~! 몸 털기!", action: "shake" }) },
+  { test: /(킁킁|냄새)/, reply: () => ({ text: "킁킁… 어디서 맛있는 냄새가…?", action: "sniff" }) },
+  { test: /(깡충|토끼)/, reply: () => ({ text: "깡충깡충~ 토끼처럼!", action: "hop" }) },
+  { test: /(춤|댄스|노래)/, reply: () => ({ text: "♪ 뽀식이 댄스 타임! ♪", action: "dance" }) },
+  { test: /(인사\s*해|손\s*흔들|빠빠이|바이\s*바이)/, reply: () => ({ text: "안녕~! 안녕~! (앞발 흔들흔들)", action: "wave" }) },
+  { test: /(꾸벅|졸아|졸고)/, reply: () => ({ text: "꾸벅… 꾸벅… 하아암~", action: "doze" }) },
+  { test: /(운동|스쿼트|체조)/, reply: () => ({ text: "운동 시작! 하나! 둘!", action: "squat" }) },
+  { test: /(뒹굴|배\s*(보여|만져|쓰담|긁)|배꼽)/, reply: () => ({ text: pick(["배 쓰담쓰담 해주세요~", "뒹굴뒹굴~ 기분 좋다!"]), action: "belly" }) },
   { test: /(우다다|달려|뛰어\s*놀)/, reply: () => ({ text: "우다다다다!! 신난다!!", action: "zoomies" }) },
   { test: /(꼬리)/, reply: () => ({ text: "꼬리 잡을 거야! 빙글빙글~", action: "chase" }) },
   { test: /(숨바꼭질|빼꼼|숨어\s*봐)/, reply: () => ({ text: "숨바꼭질! 나 찾아봐라~", action: "peek" }) },
@@ -100,6 +108,35 @@ const RULES = [
   { test: /(잘\s*가|바이|bye|나중에|이따)/i, reply: () => ({ text: "금방 와요! 기다리고 있을게요~", action: "sit" }) },
   { test: /(멍|왈|월)/, reply: () => ({ text: pick(["멍멍! 왈왈!", "왈! (주인님도 강아지 말 할 줄 아네요!)"]), action: "jump" }) },
 ]
+
+// Buttons under the desktop chat box, in this order; the KakaoTalk bot shows the first 10.
+// Add a new trick's word here and it appears in both places.
+export const SUGGESTIONS = [
+  "안녕!", "앉아", "빵!", "얼굴!", "우다다", "숨바꼭질", "춤춰", "데굴데굴", "간식 줄까?", "사랑해",
+  "손", "하이파이브", "애교 부려봐", "뒹굴", "꼬리 잡기", "몸 털어", "킁킁", "깡충깡충", "인사해",
+  "운동하자", "하품", "산책 가자", "이리 와", "잘 자",
+]
+
+// The KakaoTalk bot shows one picture per answer. Actions without a picture of their own borrow one.
+export const PICTURE_FOR_ACTION = {
+  wag: "front",
+  happy: "jump",
+  treat: "eat",
+  ball: "run",
+  come: "run",
+  fetch: "run",
+  spin: "run",
+  chase: "run",
+  nap: "sleep",
+  shake: "front",
+  sniff: "eat",
+  hop: "jump",
+  roll: "belly",
+  dance: "highfive",
+  wave: "paw",
+  doze: "yawn",
+  squat: "sit",
+}
 
 const FALLBACK = [
   (t) => `"${t}"? 킁킁… 그게 뭐예요? 맛있는 거예요?`,

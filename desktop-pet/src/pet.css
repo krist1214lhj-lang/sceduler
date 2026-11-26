@@ -144,3 +144,13 @@ html, body {
 #pet.sprite .dog-beg { animation: sprite-beg .5s ease-in-out infinite }
 #pet.sprite .dog-belly { animation: sprite-wiggle .45s ease-in-out infinite }
 #pet.sprite .dog-yawn { animation: sprite-breathe 1.2s ease-in-out infinite }
+@keyframes sprite-shake { 0%,100% { transform: translateX(0) rotate(0) } 25% { transform: translateX(-4px) rotate(-5deg) } 75% { transform: translateX(4px) rotate(5deg) } }
+@keyframes sprite-hop { 0%,100% { transform: translateY(0) scale(1.03, .95) } 50% { transform: translateY(-24px) scale(.98, 1.03) } }
+@keyframes sprite-roll { from { transform: rotate(0) } to { transform: rotate(360deg) } }
+@keyframes sprite-doze { 0%,55%,100% { transform: rotate(0) translateY(0) } 70%,85% { transform: rotate(5deg) translateY(4px) } }
+#pet.sprite .dog-shake { animation: sprite-shake .09s linear infinite }
+@keyframes sprite-sniff { 0%,100% { transform: rotate(7deg) } 50% { transform: rotate(10deg) translateY(2px) } }
+#pet.sprite .dog-sniff { animation: sprite-sniff .45s ease-in-out infinite }
+#pet.sprite .dog-hop { animation: sprite-hop .36s ease-in-out infinite }
+#pet.sprite .dog-roll { animation: sprite-roll .6s linear infinite; transform-origin: 50% 62% }
+#pet.sprite .dog-doze { animation: sprite-doze 1.5s ease-in-out infinite }

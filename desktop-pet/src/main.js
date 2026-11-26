@@ -205,7 +205,7 @@ function openChat() {
   }
   const area = targetDisplay().workArea
   const width = 340
-  const height = 440
+  const height = 520
   chatWin = new BrowserWindow({
     width,
     height,
@@ -283,6 +283,14 @@ function buildTrayMenu() {
         ["zoomies", "💨 우다다 달리기"],
         ["chase", "🌀 꼬리 잡기"],
         ["peek", "👀 숨바꼭질 (빼꼼)"],
+        ["shake", "💦 몸 털기"],
+        ["sniff", "👃 킁킁 냄새 맡기"],
+        ["hop", "🐰 깡충깡충"],
+        ["roll", "🔄 데굴데굴"],
+        ["dance", "🎵 춤추기"],
+        ["wave", "👋 인사하기"],
+        ["doze", "😪 꾸벅꾸벅"],
+        ["squat", "💪 운동하기"],
       ].map(([t, label]) => ({ label, click: () => sendCommand(`trick:${t}`) })),
     },
     { label: "🎾 공 던져 주기", click: () => sendCommand("ball") },
@@ -434,6 +442,14 @@ async function runSmokeTest() {
     ["23-nap", "window.__idle(400)", 800],
     ["24-welcome", "window.__idle(1)", 600],
     ["25-chat-zoomies", "window.dispatchChat('우다다')", 600],
+    ["26-shake", "window.dispatchChat('몸 털어')", 500],
+    ["27-sniff", "window.dispatchChat('킁킁')", 900],
+    ["28-hop", "window.dispatchChat('깡충깡충')", 500],
+    ["29-roll", "window.dispatchChat('데굴데굴')", 450],
+    ["30-dance", "window.dispatchChat('춤춰')", 400],
+    ["31-wave", "window.dispatchChat('인사해')", 300],
+    ["32-doze", "window.dispatchChat('꾸벅꾸벅 졸아')", 800],
+    ["33-squat", "window.dispatchChat('운동하자')", 950],
   ]
   for (const [label, code, ms] of steps) {
     if (code) await js(code)

@@ -1,3 +1,5 @@
+import { SUGGESTIONS } from "./brain.js"
+
 const log = document.getElementById("log")
 const input = document.getElementById("input")
 let dogName = "뽀식이"
@@ -34,4 +36,12 @@ document.getElementById("form").addEventListener("submit", (e) => {
   input.value = ""
   input.focus()
 })
-document.querySelectorAll("#chips button").forEach((b) => b.addEventListener("click", () => send(b.textContent)))
+// One button per suggestion from the shared brain, so new tricks show up here by themselves.
+const chips = document.getElementById("chips")
+for (const label of SUGGESTIONS) {
+  const b = document.createElement("button")
+  b.type = "button"
+  b.textContent = label
+  b.addEventListener("click", () => send(label))
+  chips.appendChild(b)
+}
