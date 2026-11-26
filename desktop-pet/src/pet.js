@@ -10,7 +10,8 @@ const spriteEl = document.getElementById("sprite")
 // Frames of the real 뽀식이, made from the user's photo (assets/ppo/*.png). All share one scale.
 const SPRITES = {
   front: ["front"],
-  walk: ["walk0", "walk1", "walk2", "walk3"],
+  // 8 frames of one natural step cycle: legs swing front/back from one picture (desktop-pet/README.md)
+  walk: ["walk0", "walk1", "walk2", "walk3", "walk4", "walk5", "walk6", "walk7"],
   run: ["run0", "run1", "run2", "run3"],
   sit: ["sit"],
   sleep: ["sleep"],
@@ -29,6 +30,7 @@ const TRICKS = ["bang", "shy", "highfive", "beg", "belly", "yawn"]
 const POSE = { walk: "walk", run: "run", fetch: "run", spin: "run", chase: "run", nap: "sleep", sit: "sit", sleep: "sleep", jump: "jump", bow: "bow", paw: "paw", eat: "eat" }
 for (const t of TRICKS) POSE[t] = t
 const FRAME_MS = { walk: 130, run: 85 }
+const WALK_STEP = 0.075 // fraction of the dog's width walked per frame (8 frames = one stride cycle)
 const BASE_W = 222 // natural width of a walking frame = the dog's box width
 const BASE_H = 244
 const spriteSize = {}
@@ -41,7 +43,9 @@ for (const name of new Set(Object.values(SPRITES).flat())) {
 function drawSprite(now) {
   const pose = POSE[S.action] || "front"
   const frames = SPRITES[pose]
-  const name = frames.length > 1 ? frames[Math.floor(now / FRAME_MS[pose]) % frames.length] : frames[0]
+  // Walking frames follow the distance walked, so the paws stay planted instead of sliding.
+  const index = pose === "walk" ? Math.floor(S.walkDist / (S.w * WALK_STEP)) : Math.floor(now / FRAME_MS[pose])
+  const name = frames[index % frames.length]
   if (spriteEl.dataset.n !== name) {
     spriteEl.dataset.n = name
     spriteEl.src = `assets/ppo/${name}.png`
@@ -57,7 +61,9 @@ function drawSprite(now) {
   else if (S.x + S.w + extra > S.W) shift = S.W - (S.x + S.w + extra)
   // The side-view frames face right; the front photo has the name tag text, so it never mirrors.
   const flip = pose === "front" ? 1 : S.facing
-  spriteEl.style.transform = `translateX(calc(-50% + ${shift}px)) scaleX(${flip})`
+  // Each step lifts the body a touch (two steps per cycle).
+  const bob = pose === "walk" ? -Math.abs(Math.sin((S.walkDist / (S.w * WALK_STEP * frames.length)) * Math.PI * 2)) * S.w * 0.015 : 0
+  spriteEl.style.transform = `translate(calc(-50% + ${shift}px), ${bob}px) scaleX(${flip})`
 }
 
 const SIZES = { small: 110, medium: 150, large: 200 }
@@ -179,6 +185,7 @@ const S = {
   lastStretch: performance.now(),
   greeted: false,
   entered: false,
+  walkDist: 0,
   sprite: true,
   ownerName: "",
   lastFed: Date.now(),
@@ -268,7 +275,7 @@ function doAction(a, opts = {}) {
   if (a !== "sleep") cancelBed()
   if (!opts.keepScript) S.script = null
   if (a !== "nap") S.napping = false
-  S.speed = opts.speed || (a === "walk" ? 90 : 330)
+  S.speed = opts.speed || (a === "walk" ? 75 : 330)
   S.free = Boolean(opts.free)
   if (opts.face) S.facing = opts.face
   S.action = a
@@ -835,6 +842,7 @@ function loop(now) {
         arrive()
       } else if (Math.abs(dx) > step) {
         S.x += Math.sign(dx) * step
+        if (a === "walk") S.walkDist += step
         S.facing = dx < 0 ? -1 : 1
       }
     } else if (now > S.until) {

@@ -24,3 +24,6 @@ npm run smoke      # 스크린샷 테스트 (out/)
 npm run dist:win   # 윈도우 설치 파일 (dist/)
 ```
 GitHub Actions(`.github/workflows/desktop-pet.yml`)가 `desktop-pet/` 이 바뀔 때마다 윈도우 설치 파일을 만들어 `ppo-pet` 릴리스에 올려요.
+
+## 걷기 그림
+`src/assets/ppo/walk0~7.png` 는 걷기 그림 한 장에서 무릎 아래만 앞뒤로 부드럽게 휘게 만든 8장(앞다리와 뒷다리가 반대로, 앞으로 내밀 때 살짝 들기)이에요. `pet.js` 는 시간 대신 걸은 거리에 맞춰 그림을 넘겨서 발이 미끄러지지 않아요.
