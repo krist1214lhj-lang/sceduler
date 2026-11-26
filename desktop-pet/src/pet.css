@@ -123,7 +123,7 @@ html, body {
 @keyframes sprite-breathe { 0%,100% { transform: scale(1, 1) } 50% { transform: scale(1.012, 1.03) } }
 @keyframes sprite-nod { 0%,100% { transform: translateY(0) } 50% { transform: translateY(3px) } }
 @keyframes sprite-paw { 0%,100% { transform: rotate(-2deg) } 50% { transform: rotate(3deg) } }
-#pet.sprite .dog-walk { animation: sprite-bob .26s ease-in-out infinite }
+#pet.sprite .dog-walk { animation: none } /* the step bob follows the paws (pet.js drawSprite) */
 #pet.sprite .dog-run, #pet.sprite .dog-fetch { animation: sprite-bob .17s ease-in-out infinite }
 #pet.sprite .dog-sit { animation: sprite-breathe 2.4s ease-in-out infinite }
 #pet.sprite .dog-sleep, #pet.sprite .dog-nap { animation: sprite-breathe 3s ease-in-out infinite }
