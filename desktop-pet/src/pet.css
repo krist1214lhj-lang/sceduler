@@ -111,14 +111,18 @@ html, body {
 #pet.sprite #img { display: none; }
 #pet:not(.sprite) #sprite { display: none; }
 #pet.sprite #body { position: relative; height: var(--h, 160px); }
-#sprite {
+/* Every pose picture is loaded once and kept on the page; only the current one is shown.
+   (Swapping one <img>'s src made Windows blank the dog for a moment while the new file loaded.) */
+#sprite { position: absolute; inset: 0; pointer-events: none; }
+#sprite img {
   position: absolute;
   bottom: 0;
   left: 50%;
   max-width: none;
-  pointer-events: none;
+  visibility: hidden;
   filter: drop-shadow(0 4px 5px rgba(0, 0, 0, .22));
 }
+#sprite img.on { visibility: visible; }
 @keyframes sprite-bob { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-4px) } }
 @keyframes sprite-breathe { 0%,100% { transform: scale(1, 1) } 50% { transform: scale(1.012, 1.03) } }
 @keyframes sprite-nod { 0%,100% { transform: translateY(0) } 50% { transform: translateY(3px) } }

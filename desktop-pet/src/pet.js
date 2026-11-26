@@ -34,25 +34,38 @@ const WALK_STEP = 0.075 // fraction of the dog's width walked per frame (8 frame
 const BASE_W = 222 // natural width of a walking frame = the dog's box width
 const BASE_H = 244
 const spriteSize = {}
+const spriteImgs = {}
 for (const name of new Set(Object.values(SPRITES).flat())) {
-  const im = new Image()
+  const im = document.createElement("img")
+  im.alt = ""
+  im.draggable = false
   im.onload = () => (spriteSize[name] = [im.naturalWidth, im.naturalHeight])
   im.src = `assets/ppo/${name}.png`
+  spriteEl.appendChild(im)
+  spriteImgs[name] = im
 }
+let shownSprite = null
 
 function drawSprite(now) {
   const pose = POSE[S.action] || "front"
   const frames = SPRITES[pose]
   // Walking frames follow the distance walked, so the paws stay planted instead of sliding.
-  const index = pose === "walk" ? Math.floor(S.walkDist / (S.w * WALK_STEP)) : Math.floor(now / FRAME_MS[pose])
+  // (Single-picture poses have no frame timing: always their only picture.)
+  const index =
+    frames.length === 1 ? 0 : pose === "walk" ? Math.floor(S.walkDist / (S.w * WALK_STEP)) : Math.floor(now / FRAME_MS[pose])
   const name = frames[index % frames.length]
-  if (spriteEl.dataset.n !== name) {
-    spriteEl.dataset.n = name
-    spriteEl.src = `assets/ppo/${name}.png`
+  const el = spriteImgs[name]
+  if (!el) return
+  if (shownSprite !== el) {
+    // Keep showing the previous picture until the next one has loaded, so the dog never blinks out.
+    if (!el.complete || !el.naturalWidth) return
+    if (shownSprite) shownSprite.classList.remove("on")
+    el.classList.add("on")
+    shownSprite = el
   }
   const size = spriteSize[name]
   const width = size ? (size[0] * S.w) / BASE_W : S.w
-  if (size) spriteEl.style.width = `${width}px`
+  if (size) el.style.width = `${width}px`
   // Wide poses (bang, belly) stick out of the box; keep them on screen at the edges.
   const extra = Math.max(0, (width - S.w) / 2)
   let shift = 0
@@ -63,7 +76,7 @@ function drawSprite(now) {
   const flip = pose === "front" ? 1 : S.facing
   // Each step lifts the body a touch (two steps per cycle).
   const bob = pose === "walk" ? -Math.abs(Math.sin((S.walkDist / (S.w * WALK_STEP * frames.length)) * Math.PI * 2)) * S.w * 0.015 : 0
-  spriteEl.style.transform = `translate(calc(-50% + ${shift}px), ${bob}px) scaleX(${flip})`
+  el.style.transform = `translate(calc(-50% + ${shift}px), ${bob}px) scaleX(${flip})`
 }
 
 const SIZES = { small: 110, medium: 150, large: 200 }
@@ -208,6 +221,8 @@ window.__petState = () => ({
   H: S.H,
   item: S.item && { kind: S.item.kind, x: Math.round(S.item.x), y: Math.round(S.item.y) },
   bubble: bubbleEl.classList.contains("show") ? bubbleEl.textContent : null,
+  // The picture actually on screen (null = the dog is invisible: a bug the smoke test must catch).
+  pic: S.sprite ? (shownSprite ? shownSprite.src.split("/").pop() : null) : "photo",
 })
 
 const ground = () => S.H - S.h
