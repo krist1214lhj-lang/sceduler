@@ -7,3 +7,5 @@ export type DogBrainReply = {
   remember?: { ownerName?: string }
 }
 export function reply(raw: string, ctx: DogBrainContext): DogBrainReply
+export const SUGGESTIONS: string[]
+export const PICTURE_FOR_ACTION: Record<string, string>
